@@ -72,33 +72,33 @@ pipeline {
                             string(credentialsId: 'jira-api-token', variable: 'JIRA_API_TOKEN')
                         ]) {
                             if (isUnix()) {
-                                sh '''
+                                sh """
                                     . venv/bin/activate
                                     export VERSION=${VERSION}
                                     python3 weekly_work_summary.py
-                                '''
+                                """
                             } else {
-                                bat '''
+                                bat """
                                     call venv\\Scripts\\activate.bat
-                                    set VERSION=%VERSION%
+                                    set VERSION=${VERSION}
                                     python weekly_work_summary.py
-                                '''
+                                """
                             }
                         }
                     } catch (Exception e) {
                         echo "Jenkins credentials not found, using .env file instead"
                         if (isUnix()) {
-                            sh '''
+                            sh """
                                 . venv/bin/activate
                                 export VERSION=${VERSION}
                                 python3 weekly_work_summary.py
-                            '''
+                            """
                         } else {
-                            bat '''
+                            bat """
                                 call venv\\Scripts\\activate.bat
-                                set VERSION=%VERSION%
+                                set VERSION=${VERSION}
                                 python weekly_work_summary.py
-                            '''
+                            """
                         }
                     }
                 }
