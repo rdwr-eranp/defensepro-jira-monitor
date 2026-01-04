@@ -3,8 +3,8 @@ pipeline {
     agent { label 'built-in' }
     
     triggers {
-        // Run every Monday at 9:00 AM
-        cron('0 9 * * 1')
+        // Run every Wednesday at 9:00 AM
+        cron('0 9 * * 3')
     }
     
     environment {
