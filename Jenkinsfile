@@ -107,9 +107,9 @@ pipeline {
         
         stage('Archive Reports') {
             steps {
-                // Archive HTML and CSV reports as Jenkins artifacts
-                archiveArtifacts artifacts: '**/*.html, **/*.csv', 
-                                 allowEmptyArchive: false,
+                // Archive HTML and CSV reports as Jenkins artifacts (root directory only)
+                archiveArtifacts artifacts: 'weekly_work_summary_*.html, weekly_work_summary_*.csv, open_bugs_report.html', 
+                                 allowEmptyArchive: true,
                                  fingerprint: true,
                                  onlyIfSuccessful: true
             }
