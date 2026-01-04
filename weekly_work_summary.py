@@ -1014,7 +1014,7 @@ def main():
         </div>
     </div>
 
-    {fig_bugs.to_html(include_plotlyjs='cdn', div_id='bugs-chart', full_html=False, config={{'displayModeBar': False}})}
+    {fig_bugs.to_html(include_plotlyjs='inline', div_id='bugs-chart', full_html=False, config={{'displayModeBar': False}})}
     {fig_historical.to_html(include_plotlyjs=False, div_id='historical-trend-chart', full_html=False, config={{'displayModeBar': False}})}
     {fig_high_sev.to_html(include_plotlyjs=False, div_id='high-sev-trend-chart', full_html=False, config={{'displayModeBar': False}})}
     {fig_release_dist.to_html(include_plotlyjs=False, div_id='release-dist-chart', full_html=False, config={{'displayModeBar': False}})}
