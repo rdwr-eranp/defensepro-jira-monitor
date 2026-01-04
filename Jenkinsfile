@@ -122,16 +122,6 @@ pipeline {
                     reportName: 'Weekly Work Summary',
                     reportTitles: 'DefensePro Weekly Report'
                 ])
-                
-                publishHTML([
-                    allowMissing: false,
-                    alwaysLinkToLastBuild: true,
-                    keepAll: true,
-                    reportDir: '.',
-                    reportFiles: 'open_bugs_report.html',
-                    reportName: 'Open Bugs Report',
-                    reportTitles: 'Open Bugs Across Releases'
-                ])
             }
         }
         
@@ -151,7 +141,6 @@ pipeline {
                         <h3>Reports Generated:</h3>
                         <ul>
                             <li><a href="${BUILD_URL}Weekly_20Work_20Summary/">Weekly Work Summary</a></li>
-                            <li><a href="${BUILD_URL}Open_20Bugs_20Report/">Open Bugs Report</a></li>
                             <li><a href="${BUILD_URL}artifact/">Download Artifacts (HTML/CSV)</a></li>
                         </ul>
                         
@@ -162,7 +151,7 @@ pipeline {
                         """,
                         mimeType: 'text/html',
                         to: 'eranp@radware.com',
-                        attachmentsPattern: '**/weekly_work_summary_*.html, **/open_bugs_report.html',
+                        attachmentsPattern: '**/weekly_work_summary_*.html, **/weekly_work_summary_*.csv',
                         attachLog: false
                     )
                 }
