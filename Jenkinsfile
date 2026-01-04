@@ -1,5 +1,5 @@
 pipeline {
-    agent any
+    agent { label 'built-in' }
     
     triggers {
         // Run every Monday at 9:00 AM
