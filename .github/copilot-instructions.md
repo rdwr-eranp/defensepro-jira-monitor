@@ -1,0 +1,9 @@
+- [x] Verify that the copilot-instructions.md file in the .github directory is created.
+- [x] Clarify Project Requirements - Python project for Jira API integration
+- [x] Scaffold the Project - Created main.py, jira_helper.py, requirements.txt, .env.example, .gitignore
+- [x] Customize the Project - Added Jira helper class with common operations
+- [x] Install Required Extensions - No extensions required
+- [x] Compile the Project - Dependencies installed successfully
+- [x] Create and Run Task - Not needed for Python script
+- [x] Launch the Project - Ready to run with `python main.py`
+- [x] Ensure Documentation is Complete - README.md created with setup instructions
