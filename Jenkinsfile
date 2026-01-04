@@ -152,13 +152,5 @@ pipeline {
                 to: 'eranp@radware.com'
             )
         }
-        always {
-            // Clean up workspace if needed
-            cleanWs(
-                deleteDirs: true,
-                notFailBuild: true,
-                patterns: [[pattern: '*.pyc', type: 'INCLUDE']]
-            )
-        }
     }
 }
