@@ -7,17 +7,6 @@ pipeline {
     }
     
     environment {
-        // Jira credentials stored in Jenkins Credentials
-        JIRA_URL = credentials('jira-url')
-        JIRA_EMAIL = credentials('jira-email')
-        JIRA_API_TOKEN = credentials('jira-api-token')
-        
-        // PostgreSQL connection (if needed for release readiness)
-        // POSTGRES_HOST = credentials('postgres-host')
-        // POSTGRES_DB = credentials('postgres-db')
-        // POSTGRES_USER = credentials('postgres-user')
-        // POSTGRES_PASSWORD = credentials('postgres-password')
-        
         // Release version to track
         VERSION = '10.13.0.0'
     }
@@ -55,10 +44,17 @@ pipeline {
                     def timestamp = new Date().format('yyyy-MM-dd_HHmm')
                     echo "Generating weekly report for version ${VERSION}"
                     
-                    if (isUnix()) {
-                        sh "python3 weekly_work_summary.py"
-                    } else {
-                        bat "python weekly_work_summary.py"
+                    // Use credentials only for script execution
+                    withCredentials([
+                        string(credentialsId: 'jira-url', variable: 'JIRA_URL'),
+                        string(credentialsId: 'jira-email', variable: 'JIRA_EMAIL'),
+                        string(credentialsId: 'jira-api-token', variable: 'JIRA_API_TOKEN')
+                    ]) {
+                        if (isUnix()) {
+                            sh "python3 weekly_work_summary.py"
+                        } else {
+                            bat "python weekly_work_summary.py"
+                        }
                     }
                 }
             }
