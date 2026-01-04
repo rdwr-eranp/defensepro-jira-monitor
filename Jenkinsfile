@@ -25,11 +25,25 @@ pipeline {
                 script {
                     if (isUnix()) {
                         sh '''
-                            python3 -m pip install --upgrade pip
+                            # Create virtual environment if it doesn't exist
+                            if [ ! -d "venv" ]; then
+                                python3 -m venv venv
+                            fi
+                            
+                            # Activate and install dependencies
+                            . venv/bin/activate
+                            pip install --upgrade pip
                             pip install -r requirements.txt
                         '''
                     } else {
                         bat '''
+                            REM Create virtual environment if it doesn't exist
+                            if not exist venv (
+                                python -m venv venv
+                            )
+                            
+                            REM Activate and install dependencies
+                            call venv\\Scripts\\activate.bat
                             python -m pip install --upgrade pip
                             pip install -r requirements.txt
                         '''
@@ -51,9 +65,15 @@ pipeline {
                         string(credentialsId: 'jira-api-token', variable: 'JIRA_API_TOKEN')
                     ]) {
                         if (isUnix()) {
-                            sh "python3 weekly_work_summary.py"
+                            sh '''
+                                . venv/bin/activate
+                                python3 weekly_work_summary.py
+                            '''
                         } else {
-                            bat "python weekly_work_summary.py"
+                            bat '''
+                                call venv\\Scripts\\activate.bat
+                                python weekly_work_summary.py
+                            '''
                         }
                     }
                 }
