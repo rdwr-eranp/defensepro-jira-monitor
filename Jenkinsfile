@@ -140,9 +140,11 @@ pipeline {
                         
                         <h3>Reports Generated:</h3>
                         <ul>
-                            <li><a href="${BUILD_URL}Weekly_20Work_20Summary/">Weekly Work Summary</a></li>
-                            <li><a href="${BUILD_URL}artifact/">Download Artifacts (HTML/CSV)</a></li>
+                            <li><a href="${BUILD_URL}Weekly_20Work_20Summary/">View Weekly Work Summary Report</a></li>
+                            <li><a href="${BUILD_URL}artifact/*view*/">Browse All Reports</a></li>
                         </ul>
+                        
+                        <p><strong>Note:</strong> Click "View Weekly Work Summary Report" to see the full HTML report in your browser.</p>
                         
                         <p>View full details in Jenkins: <a href="${BUILD_URL}">${BUILD_URL}</a></p>
                         
