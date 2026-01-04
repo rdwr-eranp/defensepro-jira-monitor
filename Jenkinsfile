@@ -73,11 +73,13 @@ pipeline {
                             if (isUnix()) {
                                 sh '''
                                     . venv/bin/activate
+                                    export VERSION=${VERSION}
                                     python3 weekly_work_summary.py
                                 '''
                             } else {
                                 bat '''
                                     call venv\\Scripts\\activate.bat
+                                    set VERSION=%VERSION%
                                     python weekly_work_summary.py
                                 '''
                             }
@@ -87,11 +89,13 @@ pipeline {
                         if (isUnix()) {
                             sh '''
                                 . venv/bin/activate
+                                export VERSION=${VERSION}
                                 python3 weekly_work_summary.py
                             '''
                         } else {
                             bat '''
                                 call venv\\Scripts\\activate.bat
+                                set VERSION=%VERSION%
                                 python weekly_work_summary.py
                             '''
                         }

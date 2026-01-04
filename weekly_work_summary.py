@@ -772,9 +772,12 @@ def save_data_to_csv(data, version="10.12.0.0"):
 def main():
     """Main execution function"""
     try:
+        # Get version from environment variable or use default
+        version = os.getenv('VERSION', '10.13.0.0')
+        
         print("=" * 70)
         print("Weekly Work Summary")
-        print("DefensePro 10.13.0.0")
+        print(f"DefensePro {version}")
         print("=" * 70)
         print()
         
@@ -784,7 +787,6 @@ def main():
         print("✓ Connected successfully\n")
         
         # Fetch work summary data
-        version = "10.13.0.0"
         weeks_back = 0  # Just the current/last week
         data = fetch_weekly_work_data(jira, version=version, weeks_back=weeks_back)
         
