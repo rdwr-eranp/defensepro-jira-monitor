@@ -117,10 +117,6 @@ pipeline {
         
         stage('Publish Reports') {
             steps {
-                script {
-                    // Disable Content Security Policy to allow Plotly charts
-                    System.setProperty("hudson.model.DirectoryBrowserSupport.CSP", "")
-                }
                 // Publish HTML reports for viewing in Jenkins
                 publishHTML([
                     allowMissing: false,
