@@ -58,12 +58,32 @@ pipeline {
                     def timestamp = new Date().format('yyyy-MM-dd_HHmm')
                     echo "Generating weekly report for version ${VERSION}"
                     
-                    // Use credentials only for script execution
-                    withCredentials([
-                        string(credentialsId: 'jira-url', variable: 'JIRA_URL'),
-                        string(credentialsId: 'jira-email', variable: 'JIRA_EMAIL'),
-                        string(credentialsId: 'jira-api-token', variable: 'JIRA_API_TOKEN')
-                    ]) {
+                    // Credentials can be provided either via:
+                    // 1. Jenkins credentials (jira-url, jira-email, jira-api-token)
+                    // 2. .env file in the workspace
+                    
+                    // Try to use Jenkins credentials if available, otherwise fall back to .env
+                    def hasCredentials = true
+                    try {
+                        withCredentials([
+                            string(credentialsId: 'jira-url', variable: 'JIRA_URL'),
+                            string(credentialsId: 'jira-email', variable: 'JIRA_EMAIL'),
+                            string(credentialsId: 'jira-api-token', variable: 'JIRA_API_TOKEN')
+                        ]) {
+                            if (isUnix()) {
+                                sh '''
+                                    . venv/bin/activate
+                                    python3 weekly_work_summary.py
+                                '''
+                            } else {
+                                bat '''
+                                    call venv\\Scripts\\activate.bat
+                                    python weekly_work_summary.py
+                                '''
+                            }
+                        }
+                    } catch (Exception e) {
+                        echo "Jenkins credentials not found, using .env file instead"
                         if (isUnix()) {
                             sh '''
                                 . venv/bin/activate
