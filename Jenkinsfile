@@ -1,4 +1,5 @@
 pipeline {
+    // DefensePro Weekly Report Pipeline - v1.0
     agent { label 'built-in' }
     
     triggers {
