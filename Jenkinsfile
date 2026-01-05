@@ -94,6 +94,7 @@ pipeline {
                         echo "Jenkins credentials not found, loading from .env file instead"
                         if (isUnix()) {
                             sh """
+                                cd ${WORKSPACE}
                                 . venv/bin/activate
                                 export VERSION=${VERSION}
                                 export BUILDS=${BUILDS}
@@ -102,7 +103,7 @@ pipeline {
                                 if [ -f .env ]; then
                                     echo "Found .env file, loading environment variables..."
                                     set -a  # automatically export all variables
-                                    . .env
+                                    . ./.env
                                     set +a
                                 else
                                     echo "ERROR: .env file not found! Please create .env file with credentials."
