@@ -118,14 +118,35 @@ def get_automation_data(conn, jira, version, builds, sprint_start, sprint_end):
     test_ids = tests_df['test_id'].tolist()
     
     if not test_ids:
+        # Return structure with all 6 platform type combinations showing zero data
+        all_platform_types = ['EZchip', 'FPGA', 'Software']
+        all_modes = ['Routing', 'Transparent']
+        all_combinations = [f"{pt} - {mode}" for pt in all_platform_types for mode in all_modes]
+        
+        empty_platform_type_data = [{
+            'platform_type_mode': combo,
+            'tests': 0,
+            'available_tests': 0,
+            'coverage': 0,
+            'executions': 0,
+            'passed': 0,
+            'failed': 0,
+            'pass_ratio': 0
+        } for combo in all_combinations]
+        
         return {
             'total_tests': 0,
             'total_executions': 0,
             'passed': 0,
             'failed': 0,
             'pass_ratio': 0,
+            'overall_coverage': 0,
             'platform_data': [],
-            'failed_tests': []
+            'platform_type_data': empty_platform_type_data,
+            'critical_failures': 0,
+            'failed_tests': [],
+            'automation_bugs': [],
+            'automation_bugs_count': 0
         }
     
     # Get execution results
