@@ -667,11 +667,6 @@ def main():
     # Calculate historical trends
     print("Calculating historical bug trends...")
     historical_trends = calculate_historical_trends(bugs)
-            bugs_on_dev.append(bug)
-        else:
-            # Default: if not clearly closed or on QA, assume on Dev
-            print(f"  Warning: Bug {bug.key} defaulting to Dev - Status: {status_name} (Category: {status_category})")
-            bugs_on_dev.append(bug)
     
     # Debug output
     print(f"\nBug categorization:")
