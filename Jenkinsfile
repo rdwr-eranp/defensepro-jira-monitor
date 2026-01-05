@@ -91,12 +91,16 @@ pipeline {
                             }
                         }
                     } catch (Exception e) {
-                        echo "Jenkins credentials not found, using .env file instead"
+                        echo "Jenkins credentials not found, loading from .env file instead"
                         if (isUnix()) {
                             sh """
                                 . venv/bin/activate
                                 export VERSION=${VERSION}
                                 export BUILDS=${BUILDS}
+                                # Load environment variables from .env file
+                                if [ -f .env ]; then
+                                    export \$(grep -v '^#' .env | xargs)
+                                fi
                                 python3 unified_weekly_report.py
                             """
                         } else {
@@ -104,6 +108,12 @@ pipeline {
                                 call venv\\Scripts\\activate.bat
                                 set VERSION=${VERSION}
                                 set BUILDS=${BUILDS}
+                                REM Load environment variables from .env file
+                                if exist .env (
+                                    for /f "usebackq tokens=* delims=" %%a in (".env") do (
+                                        set "%%a"
+                                    )
+                                )
                                 python unified_weekly_report.py
                             """
                         }
