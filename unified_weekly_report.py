@@ -353,6 +353,149 @@ def get_automation_data(conn, jira, version, builds, sprint_start, sprint_end):
     
     return stats
 
+def get_bug_status_at_date(issue, target_date):
+    """
+    Determine bug status category at a specific date by examining changelog
+    Returns: 'dev', 'qa', 'closed', or 'not_created'
+    """
+    from datetime import datetime
+    
+    # Ensure target_date is a date object
+    if isinstance(target_date, datetime):
+        target_date = target_date.date()
+    
+    # Check if bug was created before target date
+    created_date = datetime.strptime(issue.fields.created[:10], '%Y-%m-%d').date()
+    if created_date > target_date:
+        return 'not_created'
+    
+    # Replay changelog to find status at target_date
+    status_at_date = 'None'  # Default initial status
+    
+    changelog = issue.changelog
+    if hasattr(changelog, 'histories'):
+        # Sort chronologically (critical for accuracy)
+        sorted_histories = sorted(changelog.histories, key=lambda h: h.created)
+        
+        for history in sorted_histories:
+            change_date = datetime.strptime(history.created[:19], '%Y-%m-%dT%H:%M:%S').date()
+            
+            if change_date > target_date:
+                break
+            
+            for item in history.items:
+                if item.field == 'status':
+                    status_at_date = item.toString
+    
+    # Categorize
+    status_lower = status_at_date.lower()
+    if 'accepted' in status_lower:
+        return 'closed'
+    elif 'completed' in status_lower:
+        return 'qa'
+    elif any(s in status_lower for s in ['in progress', 'to do', 'to-do', 'none', 'open']):
+        return 'dev'
+    else:
+        return 'dev'
+
+def calculate_historical_trends(bugs, weeks=8):
+    """Calculate historical bug trends over the specified number of weeks"""
+    from datetime import datetime, timedelta
+    from collections import Counter
+    
+    if not bugs:
+        return {
+            'dates': [],
+            'total': [],
+            'dev': [],
+            'qa': [],
+            'high_sev_dates': [],
+            'high_sev_total': [],
+            'high_sev_dev': [],
+            'high_sev_qa': [],
+            'priority_breakdown': {},
+            'release_distribution': {}
+        }
+    
+    # Find earliest bug creation date
+    earliest_date = min([datetime.strptime(bug.fields.created[:10], '%Y-%m-%d').date() for bug in bugs])
+    end_date = datetime.now().date()
+    
+    # Generate weekly data points
+    dates = []
+    total_counts = []
+    dev_counts = []
+    qa_counts = []
+    
+    current_date = earliest_date
+    while current_date <= end_date:
+        dates.append(current_date.strftime('%Y-%m-%d'))
+        
+        total = sum(1 for bug in bugs if datetime.strptime(bug.fields.created[:10], '%Y-%m-%d').date() <= current_date)
+        dev = sum(1 for bug in bugs if datetime.strptime(bug.fields.created[:10], '%Y-%m-%d').date() <= current_date and get_bug_status_at_date(bug, current_date) == 'dev')
+        qa = sum(1 for bug in bugs if datetime.strptime(bug.fields.created[:10], '%Y-%m-%d').date() <= current_date and get_bug_status_at_date(bug, current_date) == 'qa')
+        
+        total_counts.append(total)
+        dev_counts.append(dev)
+        qa_counts.append(qa)
+        
+        current_date += timedelta(days=7)
+    
+    # High/Critical priority trend
+    high_sev_bugs = [b for b in bugs if hasattr(b.fields, 'priority') and b.fields.priority and b.fields.priority.name in ['High', 'Highest', 'Critical']]
+    
+    high_sev_dates = []
+    high_sev_total = []
+    high_sev_dev = []
+    high_sev_qa = []
+    
+    current_date = earliest_date
+    while current_date <= end_date:
+        high_sev_dates.append(current_date.strftime('%Y-%m-%d'))
+        
+        total = sum(1 for bug in high_sev_bugs if datetime.strptime(bug.fields.created[:10], '%Y-%m-%d').date() <= current_date)
+        dev = sum(1 for bug in high_sev_bugs if datetime.strptime(bug.fields.created[:10], '%Y-%m-%d').date() <= current_date and get_bug_status_at_date(bug, current_date) == 'dev')
+        qa = sum(1 for bug in high_sev_bugs if datetime.strptime(bug.fields.created[:10], '%Y-%m-%d').date() <= current_date and get_bug_status_at_date(bug, current_date) == 'qa')
+        
+        high_sev_total.append(total)
+        high_sev_dev.append(dev)
+        high_sev_qa.append(qa)
+        
+        current_date += timedelta(days=7)
+    
+    # Priority breakdown
+    priority_counts = Counter([b.fields.priority.name if hasattr(b.fields, 'priority') and b.fields.priority else 'None' for b in bugs])
+    
+    # Release distribution (bugs across releases currently open on dev)
+    release_dist = {}
+    for bug in bugs:
+        if get_bug_status_at_date(bug, end_date) == 'dev':
+            if hasattr(bug.fields, 'fixVersions') and bug.fields.fixVersions:
+                for version in bug.fields.fixVersions:
+                    priority = bug.fields.priority.name if hasattr(bug.fields, 'priority') and bug.fields.priority else 'None'
+                    if version.name not in release_dist:
+                        release_dist[version.name] = {'High': 0, 'Medium': 0, 'Low': 0}
+                    
+                    if priority in ['High', 'Highest', 'Critical']:
+                        release_dist[version.name]['High'] += 1
+                    elif priority == 'Medium':
+                        release_dist[version.name]['Medium'] += 1
+                    else:
+                        release_dist[version.name]['Low'] += 1
+    
+    return {
+        'dates': dates,
+        'total': total_counts,
+        'dev': dev_counts,
+        'qa': qa_counts,
+        'high_sev_dates': high_sev_dates,
+        'high_sev_total': high_sev_total,
+        'high_sev_dev': high_sev_dev,
+        'high_sev_qa': high_sev_qa,
+        'priority_breakdown': dict(priority_counts),
+        'release_distribution': release_dist
+    }
+
 def generate_insights(platform_type_data, stats, sprint_name):
     """Generate automated insights from platform type data"""
     insights = []
@@ -517,6 +660,15 @@ def main():
         elif 'open' in status_name or 'new' in status_name or status_name == 'none':
             bugs_on_dev.append(bug)
         else:
+            # Default to dev with warning
+            print(f"  ⚠️  Warning: Unknown status for {bug.key}: {status_name} (category: {status_category}). Assigning to Dev.")
+            bugs_on_dev.append(bug)
+    
+    # Calculate historical trends
+    print("Calculating historical bug trends...")
+    historical_trends = calculate_historical_trends(bugs)
+            bugs_on_dev.append(bug)
+        else:
             # Default: if not clearly closed or on QA, assume on Dev
             print(f"  Warning: Bug {bug.key} defaulting to Dev - Status: {status_name} (Category: {status_category})")
             bugs_on_dev.append(bug)
@@ -621,7 +773,115 @@ def main():
     
     # Generate HTML
     automation_chart_html = fig_automation.to_html(include_plotlyjs='inline', div_id='automation-chart', full_html=False) if automation_data['platform_data'] else ""
-    bugs_chart_html = fig_bugs.to_html(include_plotlyjs='inline' if not automation_data['platform_data'] else False, div_id='bugs-chart', full_html=False)    
+    bugs_chart_html = fig_bugs.to_html(include_plotlyjs='inline' if not automation_data['platform_data'] else False, div_id='bugs-chart', full_html=False)
+    
+    # Create historical bug trend charts
+    fig_historical = go.Figure()
+    fig_historical.add_trace(go.Scatter(
+        x=historical_trends['dates'],
+        y=historical_trends['total'],
+        mode='lines+markers',
+        name='Total Bugs',
+        line=dict(color='#003366', width=4),
+        marker=dict(size=8)
+    ))
+    fig_historical.add_trace(go.Scatter(
+        x=historical_trends['dates'],
+        y=historical_trends['dev'],
+        mode='lines+markers',
+        name='On Dev',
+        line=dict(color='#ff6600', width=3),
+        marker=dict(size=7)
+    ))
+    fig_historical.add_trace(go.Scatter(
+        x=historical_trends['dates'],
+        y=historical_trends['qa'],
+        mode='lines+markers',
+        name='On QA',
+        line=dict(color='#0070c0', width=3),
+        marker=dict(size=7)
+    ))
+    fig_historical.update_layout(
+        title=f'Bug Trend from Release Start - {version}',
+        xaxis_title='Week',
+        yaxis_title='Bug Count',
+        height=450,
+        legend=dict(x=0.02, y=0.98),
+        hovermode='x unified'
+    )
+    historical_chart_html = fig_historical.to_html(include_plotlyjs=False, div_id='historical-chart', full_html=False)
+    
+    # Create high/critical priority trend chart
+    fig_high_sev = go.Figure()
+    fig_high_sev.add_trace(go.Scatter(
+        x=historical_trends['high_sev_dates'],
+        y=historical_trends['high_sev_total'],
+        mode='lines+markers',
+        name='Total High/Critical',
+        line=dict(color='#d32f2f', width=4),
+        marker=dict(size=8)
+    ))
+    fig_high_sev.add_trace(go.Scatter(
+        x=historical_trends['high_sev_dates'],
+        y=historical_trends['high_sev_dev'],
+        mode='lines+markers',
+        name='On Dev',
+        line=dict(color='#ff6600', width=3),
+        marker=dict(size=7)
+    ))
+    fig_high_sev.add_trace(go.Scatter(
+        x=historical_trends['high_sev_dates'],
+        y=historical_trends['high_sev_qa'],
+        mode='lines+markers',
+        name='On QA',
+        line=dict(color='#0070c0', width=3),
+        marker=dict(size=7)
+    ))
+    fig_high_sev.update_layout(
+        title=f'HIGH/CRITICAL Priority Bug Trend - {version}',
+        xaxis_title='Week',
+        yaxis_title='Bug Count',
+        height=450,
+        legend=dict(x=0.02, y=0.98),
+        hovermode='x unified'
+    )
+    high_sev_chart_html = fig_high_sev.to_html(include_plotlyjs=False, div_id='high-sev-chart', full_html=False)
+    
+    # Create release distribution chart
+    release_dist_chart_html = ""
+    if historical_trends['release_distribution']:
+        fig_release_dist = go.Figure()
+        releases = list(historical_trends['release_distribution'].keys())
+        high_counts = [historical_trends['release_distribution'][r]['High'] for r in releases]
+        medium_counts = [historical_trends['release_distribution'][r]['Medium'] for r in releases]
+        low_counts = [historical_trends['release_distribution'][r]['Low'] for r in releases]
+        
+        fig_release_dist.add_trace(go.Bar(name='High Priority', x=releases, y=high_counts, marker_color='#d32f2f'))
+        fig_release_dist.add_trace(go.Bar(name='Medium Priority', x=releases, y=medium_counts, marker_color='#f57c00'))
+        fig_release_dist.add_trace(go.Bar(name='Low Priority', x=releases, y=low_counts, marker_color='#0288d1'))
+        
+        fig_release_dist.update_layout(
+            title='Open Bugs Across Active Releases',
+            xaxis_title='Release Version',
+            yaxis_title='Bug Count',
+            barmode='stack',
+            height=400,
+            legend=dict(x=0.02, y=0.98),
+            hovermode='x unified'
+        )
+        release_dist_chart_html = fig_release_dist.to_html(include_plotlyjs=False, div_id='release-dist-chart', full_html=False)
+    
+    # Generate priority breakdown HTML
+    priority_html = ""
+    if historical_trends['priority_breakdown']:
+        priority_html = '<h3>Priority Breakdown</h3><table><thead><tr><th>Priority</th><th>Count</th><th>Percentage</th></tr></thead><tbody>'
+        total_bugs = sum(historical_trends['priority_breakdown'].values())
+        for priority, count in sorted(historical_trends['priority_breakdown'].items(), key=lambda x: -x[1]):
+            pct = (count / total_bugs * 100) if total_bugs > 0 else 0
+            priority_class = 'priority-high' if priority in ['High', 'Highest', 'Critical'] else 'priority-medium' if priority == 'Medium' else 'priority-low'
+            priority_html += f'<tr><td><span class="{priority_class}">{priority}</span></td><td>{count}</td><td>{pct:.1f}%</td></tr>'
+        priority_html += '</tbody></table>'
+    
     # Generate insights
     insights = generate_insights(automation_data.get('platform_type_data', []), automation_data, sprint.name) if automation_data['total_tests'] > 0 else []    
     # Build platform type stats HTML - always show table even with no data
@@ -736,6 +996,18 @@ def main():
 
         <div class="section-title">🐛 Bug Status</div>
         {bugs_chart_html}
+        
+        <h2>Historical Bug Trend from Release Start</h2>
+        <p>Weekly tracking from {historical_trends['dates'][0] if historical_trends['dates'] else 'N/A'} to present ({len(historical_trends['dates'])} weeks) - Current: Total: {len(bugs)}, On Dev: {len(bugs_on_dev)}, On QA: {len(bugs_on_qa)}</p>
+        {historical_chart_html}
+        
+        <h2>High/Critical Priority Bug Trend</h2>
+        <p>Tracking only HIGH, HIGHEST, and CRITICAL priority bugs from {historical_trends['high_sev_dates'][0] if historical_trends['high_sev_dates'] else 'N/A'} to present - Current: Total: {historical_trends['high_sev_total'][-1] if historical_trends['high_sev_total'] else 0}, On Dev: {historical_trends['high_sev_dev'][-1] if historical_trends['high_sev_dev'] else 0}, On QA: {historical_trends['high_sev_qa'][-1] if historical_trends['high_sev_qa'] else 0}</p>
+        {high_sev_chart_html}
+        
+        {f'<h2>Open Bugs Distribution Across Releases</h2><p>In-progress bugs currently being worked on by Dev - Total releases with active work: {len(historical_trends["release_distribution"])}</p>{release_dist_chart_html}' if release_dist_chart_html else ''}
+        
+        {priority_html}
 
         <h2>Bugs on Dev ({len(bugs_on_dev)} bugs)</h2>
         <p>Status: In Progress, To-Do, or None (assigned but not started)</p>
