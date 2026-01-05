@@ -10,6 +10,8 @@ pipeline {
     environment {
         // Release version to track
         VERSION = '10.13.0.0'
+        // Build range for CI iteration status (comma-separated)
+        BUILDS = '100,101,102,103,104,105,106'
     }
     
     stages {
@@ -53,14 +55,14 @@ pipeline {
             }
         }
         
-        stage('Generate Weekly Report') {
+        stage('Generate Unified Weekly Report') {
             steps {
                 script {
                     def timestamp = new Date().format('yyyy-MM-dd_HHmm')
-                    echo "Generating weekly report for version ${VERSION}"
+                    echo "Generating unified weekly report for version ${VERSION}"
                     
                     // Credentials can be provided either via:
-                    // 1. Jenkins credentials (jira-url, jira-email, jira-api-token)
+                    // 1. Jenkins credentials (jira-url, jira-email, jira-api-token, pg-password)
                     // 2. .env file in the workspace
                     
                     // Try to use Jenkins credentials if available, otherwise fall back to .env
@@ -69,19 +71,22 @@ pipeline {
                         withCredentials([
                             string(credentialsId: 'jira-url', variable: 'JIRA_URL'),
                             string(credentialsId: 'jira-email', variable: 'JIRA_EMAIL'),
-                            string(credentialsId: 'jira-api-token', variable: 'JIRA_API_TOKEN')
+                            string(credentialsId: 'jira-api-token', variable: 'JIRA_API_TOKEN'),
+                            string(credentialsId: 'pg-password', variable: 'PG_PASSWORD')
                         ]) {
                             if (isUnix()) {
                                 sh """
                                     . venv/bin/activate
                                     export VERSION=${VERSION}
-                                    python3 weekly_work_summary.py
+                                    export BUILDS=${BUILDS}
+                                    python3 unified_weekly_report.py
                                 """
                             } else {
                                 bat """
                                     call venv\\Scripts\\activate.bat
                                     set VERSION=${VERSION}
-                                    python weekly_work_summary.py
+                                    set BUILDS=${BUILDS}
+                                    python unified_weekly_report.py
                                 """
                             }
                         }
@@ -91,13 +96,15 @@ pipeline {
                             sh """
                                 . venv/bin/activate
                                 export VERSION=${VERSION}
-                                python3 weekly_work_summary.py
+                                export BUILDS=${BUILDS}
+                                python3 unified_weekly_report.py
                             """
                         } else {
                             bat """
                                 call venv\\Scripts\\activate.bat
                                 set VERSION=${VERSION}
-                                python weekly_work_summary.py
+                                set BUILDS=${BUILDS}
+                                python unified_weekly_report.py
                             """
                         }
                     }
@@ -107,8 +114,8 @@ pipeline {
         
         stage('Archive Reports') {
             steps {
-                // Archive HTML and CSV reports as Jenkins artifacts (root directory only)
-                archiveArtifacts artifacts: 'weekly_work_summary_*.html, weekly_work_summary_*.csv, open_bugs_report.html', 
+                // Archive unified weekly report as Jenkins artifact
+                archiveArtifacts artifacts: 'unified_weekly_report_*.html, open_bugs_report.html', 
                                  allowEmptyArchive: true,
                                  fingerprint: true,
                                  onlyIfSuccessful: true
@@ -117,15 +124,15 @@ pipeline {
         
         stage('Publish Reports') {
             steps {
-                // Publish HTML reports for viewing in Jenkins
+                // Publish unified HTML report for viewing in Jenkins
                 publishHTML([
                     allowMissing: false,
                     alwaysLinkToLastBuild: true,
                     keepAll: true,
                     reportDir: '.',
-                    reportFiles: 'weekly_work_summary_*.html',
-                    reportName: 'Weekly Work Summary',
-                    reportTitles: 'DefensePro Weekly Report'
+                    reportFiles: 'unified_weekly_report_*.html',
+                    reportName: 'Unified Weekly Report',
+                    reportTitles: 'DefensePro Unified Weekly Report'
                 ])
             }
         }
@@ -136,20 +143,24 @@ pipeline {
                     def reportDate = new Date().format('MMMM dd, yyyy')
                     
                     emailext(
-                        subject: "DefensePro ${VERSION} - Weekly Report (${reportDate})",
-                        body: """
-                        <h2>DefensePro Weekly Status Report</h2>
+                        subject: "DefensePro ${VERSION} - Unified Weekly Report (${reportDate})",
+                        body: """<h2>DefensePro Unified Weekly Status Report</h2>
                         <p><strong>Release Version:</strong> ${VERSION}</p>
                         <p><strong>Report Date:</strong> ${reportDate}</p>
                         <p><strong>Build:</strong> #${BUILD_NUMBER}</p>
                         
-                        <h3>Reports Generated:</h3>
+                        <h3>Report Contents:</h3>
                         <ul>
-                            <li><a href="http://10.185.10.200:8080/job/DefensePro-Weekly-Report/${BUILD_NUMBER}/Weekly_20Work_20Summary/">View Weekly Work Summary Report</a></li>
-                            <li><a href="${BUILD_URL}artifact/">Download Artifacts (HTML/CSV)</a></li>
+                            <li>Bug Status (Dev, QA, Closed)</li>
+                            <li>CI Iteration Automation Status</li>
+                            <li>Platform Type & Mode Coverage</li>
+                            <li>Critical Test Failures</li>
+                            <li>Sub Test Execution Progress</li>
                         </ul>
                         
-                        <p><strong>Note:</strong> Click the link above to view the full HTML report directly in your browser.</p>
+                        <p><a href="http://10.185.10.200:8080/job/DefensePro-Weekly-Report/${BUILD_NUMBER}/Unified_20Weekly_20Report/" style="padding: 10px 20px; background-color: #1976d2; color: white; text-decoration: none; border-radius: 4px; display: inline-block;">View Unified Report</a></p>
+                        
+                        <p><a href="${BUILD_URL}artifact/">Download Artifacts (HTML)</a></p>
                         
                         <p>View full details in Jenkins: <a href="${BUILD_URL}">${BUILD_URL}</a></p>
                         
@@ -158,7 +169,7 @@ pipeline {
                         """,
                         mimeType: 'text/html',
                         to: 'eranp@radware.com',
-                        attachmentsPattern: '**/weekly_work_summary_*.html, **/weekly_work_summary_*.csv',
+                        attachmentsPattern: '**/unified_weekly_report_*.html',
                         attachLog: false
                     )
                 }
