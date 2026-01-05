@@ -115,6 +115,7 @@ pipeline {
                             """
                         } else {
                             bat """
+                                cd %WORKSPACE%
                                 call venv\\Scripts\\activate.bat
                                 set VERSION=${VERSION}
                                 set BUILDS=${BUILDS}
