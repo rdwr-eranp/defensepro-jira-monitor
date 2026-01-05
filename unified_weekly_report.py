@@ -196,14 +196,27 @@ def get_automation_data(conn, jira, version, builds, sprint_start, sprint_end):
     available_df['platform_type_mode'] = available_df['platform_type'] + ' - ' + available_df['mode']
     
     # Platform Type + Mode breakdown (aggregated) with coverage
+    # Define all possible combinations to ensure table always shows all rows
+    all_platform_types = ['EZchip', 'FPGA', 'Software']
+    all_modes = ['Routing', 'Transparent']
+    all_combinations = [f"{pt} - {mode}" for pt in all_platform_types for mode in all_modes]
+    
     platform_type_stats = []
-    for pt_mode in executions_df['platform_type_mode'].unique():
-        pt_df = executions_df[executions_df['platform_type_mode'] == pt_mode]
-        passed_count = len(pt_df[pt_df['status_lower'] == 'passed'])
-        failed_count = len(pt_df[pt_df['status_lower'].isin(['failed', 'error', 'fail'])])
-        unique_tests = len(pt_df['test_id'].unique())
+    for pt_mode in all_combinations:
+        if len(executions_df) > 0 and pt_mode in executions_df['platform_type_mode'].unique():
+            pt_df = executions_df[executions_df['platform_type_mode'] == pt_mode]
+            passed_count = len(pt_df[pt_df['status_lower'] == 'passed'])
+            failed_count = len(pt_df[pt_df['status_lower'].isin(['failed', 'error', 'fail'])])
+            unique_tests = len(pt_df['test_id'].unique())
+            executions_count = len(pt_df)
+        else:
+            # No data for this combination - show zeros
+            passed_count = 0
+            failed_count = 0
+            unique_tests = 0
+            executions_count = 0
         
-        # Calculate coverage
+        # Calculate coverage from baseline versions
         available_tests = available_df[available_df['platform_type_mode'] == pt_mode]['available_tests'].sum()
         coverage = (unique_tests / max(available_tests, 1)) * 100 if available_tests > 0 else 0
         
@@ -212,10 +225,10 @@ def get_automation_data(conn, jira, version, builds, sprint_start, sprint_end):
             'tests': unique_tests,
             'available_tests': int(available_tests),
             'coverage': coverage,
-            'executions': len(pt_df),
+            'executions': executions_count,
             'passed': passed_count,
             'failed': failed_count,
-            'pass_ratio': passed_count / max(len(pt_df), 1) * 100
+            'pass_ratio': passed_count / max(executions_count, 1) * 100 if executions_count > 0 else 0
         })
     
     stats['platform_type_data'] = platform_type_stats
@@ -590,8 +603,9 @@ def main():
     bugs_chart_html = fig_bugs.to_html(include_plotlyjs='inline' if not automation_data['platform_data'] else False, div_id='bugs-chart', full_html=False)    
     # Generate insights
     insights = generate_insights(automation_data.get('platform_type_data', []), automation_data, sprint.name) if automation_data['total_tests'] > 0 else []    
-    # Build platform type stats HTML
+    # Build platform type stats HTML - always show table even with no data
     platform_html = ""
+    # Always show the table if we have platform_type_data
     if automation_data.get('platform_type_data'):
         platform_html = '<h3>Platform Type & Mode Summary</h3>'
         platform_html += '<table><thead><tr><th>Platform Type & Mode</th><th>Tests Executed</th><th>Available Tests</th><th>Coverage</th><th>Executions</th><th>Passed</th><th>Failed</th><th>Pass Ratio</th></tr></thead><tbody>'
