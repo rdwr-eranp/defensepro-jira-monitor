@@ -97,10 +97,19 @@ pipeline {
                                 . venv/bin/activate
                                 export VERSION=${VERSION}
                                 export BUILDS=${BUILDS}
+                                
                                 # Load environment variables from .env file
                                 if [ -f .env ]; then
-                                    export \$(grep -v '^#' .env | xargs)
+                                    echo "Found .env file, loading environment variables..."
+                                    set -a  # automatically export all variables
+                                    . .env
+                                    set +a
+                                else
+                                    echo "ERROR: .env file not found! Please create .env file with credentials."
+                                    echo "Required variables: JIRA_URL, JIRA_EMAIL, JIRA_API_TOKEN, PG_PASSWORD"
+                                    exit 1
                                 fi
+                                
                                 python3 unified_weekly_report.py
                             """
                         } else {
@@ -108,12 +117,19 @@ pipeline {
                                 call venv\\Scripts\\activate.bat
                                 set VERSION=${VERSION}
                                 set BUILDS=${BUILDS}
+                                
                                 REM Load environment variables from .env file
                                 if exist .env (
+                                    echo Found .env file, loading environment variables...
                                     for /f "usebackq tokens=* delims=" %%a in (".env") do (
                                         set "%%a"
                                     )
+                                ) else (
+                                    echo ERROR: .env file not found! Please create .env file with credentials.
+                                    echo Required variables: JIRA_URL, JIRA_EMAIL, JIRA_API_TOKEN, PG_PASSWORD
+                                    exit /b 1
                                 )
+                                
                                 python unified_weekly_report.py
                             """
                         }
