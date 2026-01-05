@@ -18,6 +18,7 @@ from plotly.subplots import make_subplots
 from datetime import datetime, timedelta
 from collections import defaultdict
 import psycopg2
+import html
 
 load_dotenv()
 
@@ -987,7 +988,7 @@ def main():
         
         {platform_html}
         
-        {('<h3>🐛 Automation Bugs During Sprint</h3><p>' + str(len(automation_data.get("automation_bugs", []))) + ' bugs with automation origin found during sprint period</p><table><thead><tr><th>Key</th><th>Summary</th><th>Status</th><th>Priority</th><th>Created</th></tr></thead><tbody>' + ''.join([f'<tr><td><a href="https://rwrnd.atlassian.net/browse/{bug["key"]}">{bug["key"]}</a></td><td>{bug["summary"]}</td><td>{bug["status"]}</td><td>{bug["priority"]}</td><td>{bug["created"]}</td></tr>' for bug in automation_data.get("automation_bugs", [])]) + '</tbody></table>') if automation_data.get("automation_bugs") else ''}
+        {('<h3>🐛 Automation Bugs During Sprint</h3><p>' + str(len(automation_data.get("automation_bugs", []))) + ' bugs with automation origin found during sprint period</p><table><thead><tr><th>Key</th><th>Summary</th><th>Status</th><th>Priority</th><th>Created</th></tr></thead><tbody>' + ''.join([f'<tr><td><a href="https://rwrnd.atlassian.net/browse/{bug["key"]}">{bug["key"]}</a></td><td>{html.escape(bug["summary"])}</td><td>{html.escape(bug["status"])}</td><td>{html.escape(bug["priority"])}</td><td>{bug["created"]}</td></tr>' for bug in automation_data.get("automation_bugs", [])]) + '</tbody></table>') if automation_data.get("automation_bugs") else ''}
 
         <div class="section-title">🐛 Bug Status</div>
         {bugs_chart_html}
@@ -1009,7 +1010,7 @@ def main():
         <table>
             <thead><tr><th>Key</th><th>Priority</th><th>Summary</th><th>Status</th></tr></thead>
             <tbody>
-                {''.join([f'<tr><td><a href="https://rwrnd.atlassian.net/browse/{bug.key}" class="bug-key">{bug.key}</a></td><td>{bug.fields.priority.name if hasattr(bug.fields, "priority") and bug.fields.priority else "N/A"}</td><td>{bug.fields.summary}</td><td>{bug.fields.status.name}</td></tr>' for bug in bugs_on_dev[:20]]) if bugs_on_dev else '<tr><td colspan="4" style="text-align: center;">No bugs on Dev</td></tr>'}
+                {''.join([f'<tr><td><a href="https://rwrnd.atlassian.net/browse/{bug.key}" class="bug-key">{bug.key}</a></td><td>{html.escape(bug.fields.priority.name) if hasattr(bug.fields, "priority") and bug.fields.priority else "N/A"}</td><td>{html.escape(bug.fields.summary)}</td><td>{html.escape(bug.fields.status.name)}</td></tr>' for bug in bugs_on_dev[:20]]) if bugs_on_dev else '<tr><td colspan="4" style="text-align: center;">No bugs on Dev</td></tr>'}
             </tbody>
         </table>
 
@@ -1018,7 +1019,7 @@ def main():
         <table>
             <thead><tr><th>Key</th><th>Priority</th><th>Summary</th><th>Status</th></tr></thead>
             <tbody>
-                {''.join([f'<tr><td><a href="https://rwrnd.atlassian.net/browse/{bug.key}" class="bug-key">{bug.key}</a></td><td>{bug.fields.priority.name if hasattr(bug.fields, "priority") and bug.fields.priority else "N/A"}</td><td>{bug.fields.summary}</td><td>{bug.fields.status.name}</td></tr>' for bug in bugs_on_qa[:20]]) if bugs_on_qa else '<tr><td colspan="4" style="text-align: center;">No bugs on QA</td></tr>'}
+                {''.join([f'<tr><td><a href="https://rwrnd.atlassian.net/browse/{bug.key}" class="bug-key">{bug.key}</a></td><td>{html.escape(bug.fields.priority.name) if hasattr(bug.fields, "priority") and bug.fields.priority else "N/A"}</td><td>{html.escape(bug.fields.summary)}</td><td>{html.escape(bug.fields.status.name)}</td></tr>' for bug in bugs_on_qa[:20]]) if bugs_on_qa else '<tr><td colspan="4" style="text-align: center;">No bugs on QA</td></tr>'}
             </tbody>
         </table>
 
