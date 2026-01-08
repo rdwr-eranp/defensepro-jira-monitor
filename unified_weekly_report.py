@@ -706,16 +706,20 @@ def main():
     sub_exec_in_progress = sum(1 for se in sub_execs if hasattr(se.fields, 'status') and 'in progress' in se.fields.status.name.lower())
     sub_exec_not_started = len(sub_execs) - sub_exec_completed - sub_exec_in_progress
     
+    # Helper function to extract team name safely
+    def get_team_name(issue):
+        scrum_team = getattr(issue.fields, 'customfield_10129', None)
+        if scrum_team:
+            return scrum_team.value if hasattr(scrum_team, 'value') else str(scrum_team)
+        return 'Unassigned'
+    
     # Group sub test executions by scrum team
     from collections import defaultdict
     team_stats = defaultdict(lambda: {'Done': 0, 'In Progress': 0, 'Not Started': 0, 'total': 0})
     
     for se in sub_execs:
         # Get scrum team name from customfield_10129
-        team = 'Unassigned'
-        scrum_team = getattr(se.fields, 'customfield_10129', None)
-        if scrum_team:
-            team = scrum_team.value if hasattr(scrum_team, 'value') else str(scrum_team)
+        team = get_team_name(se)
         
         # Determine status category
         status_lower = se.fields.status.name.lower() if hasattr(se.fields, 'status') else 'unknown'
@@ -1125,7 +1129,7 @@ def main():
                 </tr>
             </thead>
             <tbody>
-                {''.join([f'<tr><td><a href="https://rwrnd.atlassian.net/browse/{se.key}">{se.key}</a></td><td>{html.escape(se.fields.summary)}</td><td>{html.escape(se.fields.customfield_10129.value if hasattr(se.fields, "customfield_10129") and se.fields.customfield_10129 else "Unassigned")}</td><td>{html.escape(se.fields.assignee.displayName if hasattr(se.fields, "assignee") and se.fields.assignee else "Unassigned")}</td><td>{html.escape(se.fields.status.name)}</td></tr>' for se in sorted(sub_execs, key=lambda x: (getattr(x.fields, "customfield_10129", None).value if hasattr(x.fields, "customfield_10129") and getattr(x.fields, "customfield_10129", None) else "ZZZ", x.fields.summary))]) if sub_execs else '<tr><td colspan="5" style="text-align: center;">No sub test executions found</td></tr>'}
+                {''.join([f'<tr><td><a href="https://rwrnd.atlassian.net/browse/{se.key}">{se.key}</a></td><td>{html.escape(se.fields.summary)}</td><td>{html.escape(get_team_name(se))}</td><td>{html.escape(se.fields.assignee.displayName if hasattr(se.fields, "assignee") and se.fields.assignee else "Unassigned")}</td><td>{html.escape(se.fields.status.name)}</td></tr>' for se in sorted(sub_execs, key=lambda x: (get_team_name(x), x.fields.summary))]) if sub_execs else '<tr><td colspan="5" style="text-align: center;">No sub test executions found</td></tr>'}
             </tbody>
         </table>
 
