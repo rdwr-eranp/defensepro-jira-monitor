@@ -852,9 +852,33 @@ def main():
         medium_counts = [historical_trends['release_distribution'][r]['Medium'] for r in releases]
         low_counts = [historical_trends['release_distribution'][r]['Low'] for r in releases]
         
-        fig_release_dist.add_trace(go.Bar(name='High Priority', x=releases, y=high_counts, marker_color='#d32f2f'))
-        fig_release_dist.add_trace(go.Bar(name='Medium Priority', x=releases, y=medium_counts, marker_color='#f57c00'))
-        fig_release_dist.add_trace(go.Bar(name='Low Priority', x=releases, y=low_counts, marker_color='#0288d1'))
+        fig_release_dist.add_trace(go.Bar(
+            name='High Priority', 
+            x=releases, 
+            y=high_counts, 
+            marker_color='#d32f2f',
+            text=[f'{c}' if c > 0 else '' for c in high_counts],
+            textposition='inside',
+            textfont=dict(color='white', size=12)
+        ))
+        fig_release_dist.add_trace(go.Bar(
+            name='Medium Priority', 
+            x=releases, 
+            y=medium_counts, 
+            marker_color='#f57c00',
+            text=[f'{c}' if c > 0 else '' for c in medium_counts],
+            textposition='inside',
+            textfont=dict(color='white', size=12)
+        ))
+        fig_release_dist.add_trace(go.Bar(
+            name='Low Priority', 
+            x=releases, 
+            y=low_counts, 
+            marker_color='#0288d1',
+            text=[f'{c}' if c > 0 else '' for c in low_counts],
+            textposition='inside',
+            textfont=dict(color='white', size=12)
+        ))
         
         fig_release_dist.update_layout(
             title='Open Bugs Across Active Releases',
