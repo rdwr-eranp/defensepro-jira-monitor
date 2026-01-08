@@ -472,9 +472,10 @@ def calculate_historical_trends(bugs, weeks=8):
     for bug in bugs:
         bug_status = get_bug_status_at_date(bug, end_date)
         if bug_status in ['dev', 'qa']:
+            priority = bug.fields.priority.name if hasattr(bug.fields, 'priority') and bug.fields.priority else 'None'
+            
             if hasattr(bug.fields, 'fixVersions') and bug.fields.fixVersions:
                 for version in bug.fields.fixVersions:
-                    priority = bug.fields.priority.name if hasattr(bug.fields, 'priority') and bug.fields.priority else 'None'
                     if version.name not in release_dist:
                         release_dist[version.name] = {'High': 0, 'Medium': 0, 'Low': 0}
                     
@@ -484,6 +485,17 @@ def calculate_historical_trends(bugs, weeks=8):
                         release_dist[version.name]['Medium'] += 1
                     else:
                         release_dist[version.name]['Low'] += 1
+            else:
+                # Bugs without fixVersion go to "Unassigned" bucket
+                if 'Unassigned' not in release_dist:
+                    release_dist['Unassigned'] = {'High': 0, 'Medium': 0, 'Low': 0}
+                
+                if priority in ['High', 'Highest', 'Critical']:
+                    release_dist['Unassigned']['High'] += 1
+                elif priority == 'Medium':
+                    release_dist['Unassigned']['Medium'] += 1
+                else:
+                    release_dist['Unassigned']['Low'] += 1
     
     return {
         'dates': dates,
