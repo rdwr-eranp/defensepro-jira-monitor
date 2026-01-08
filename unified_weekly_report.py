@@ -700,21 +700,22 @@ def main():
         # For released versions, can skip or fetch all for historical view
         sub_exec_jql = f'project = DP AND fixVersion = "{version}" AND type = "sub test execution"'
     
-    sub_execs = jira.search_issues(sub_exec_jql, maxResults=False, fields='summary,status,assignee,customfield_10021')
+    sub_execs = jira.search_issues(sub_exec_jql, maxResults=False, fields='summary,status,assignee,customfield_10129')
     
     sub_exec_completed = sum(1 for se in sub_execs if hasattr(se.fields, 'status') and 'done' in se.fields.status.name.lower())
     sub_exec_in_progress = sum(1 for se in sub_execs if hasattr(se.fields, 'status') and 'in progress' in se.fields.status.name.lower())
     sub_exec_not_started = len(sub_execs) - sub_exec_completed - sub_exec_in_progress
     
-    # Group sub test executions by team
+    # Group sub test executions by scrum team
     from collections import defaultdict
     team_stats = defaultdict(lambda: {'Done': 0, 'In Progress': 0, 'Not Started': 0, 'total': 0})
     
     for se in sub_execs:
-        # Get team name from assignee or labels (customfield_10021 is usually labels or team)
+        # Get scrum team name from customfield_10129
         team = 'Unassigned'
-        if hasattr(se.fields, 'assignee') and se.fields.assignee:
-            team = se.fields.assignee.displayName.split()[0] if se.fields.assignee.displayName else 'Unassigned'
+        scrum_team = getattr(se.fields, 'customfield_10129', None)
+        if scrum_team:
+            team = scrum_team.value if hasattr(scrum_team, 'value') else str(scrum_team)
         
         # Determine status category
         status_lower = se.fields.status.name.lower() if hasattr(se.fields, 'status') else 'unknown'
@@ -1099,7 +1100,7 @@ def main():
         <table>
             <thead>
                 <tr>
-                    <th>Team/Assignee</th>
+                    <th>Scrum Team</th>
                     <th>Total</th>
                     <th>Done</th>
                     <th>In Progress</th>
