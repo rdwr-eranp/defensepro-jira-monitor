@@ -700,11 +700,32 @@ def main():
         # For released versions, can skip or fetch all for historical view
         sub_exec_jql = f'project = DP AND fixVersion = "{version}" AND type = "sub test execution"'
     
-    sub_execs = jira.search_issues(sub_exec_jql, maxResults=False)
+    sub_execs = jira.search_issues(sub_exec_jql, maxResults=False, fields='summary,status,assignee,customfield_10021')
     
     sub_exec_completed = sum(1 for se in sub_execs if hasattr(se.fields, 'status') and 'done' in se.fields.status.name.lower())
     sub_exec_in_progress = sum(1 for se in sub_execs if hasattr(se.fields, 'status') and 'in progress' in se.fields.status.name.lower())
     sub_exec_not_started = len(sub_execs) - sub_exec_completed - sub_exec_in_progress
+    
+    # Group sub test executions by team
+    from collections import defaultdict
+    team_stats = defaultdict(lambda: {'Done': 0, 'In Progress': 0, 'Not Started': 0, 'total': 0})
+    
+    for se in sub_execs:
+        # Get team name from assignee or labels (customfield_10021 is usually labels or team)
+        team = 'Unassigned'
+        if hasattr(se.fields, 'assignee') and se.fields.assignee:
+            team = se.fields.assignee.displayName.split()[0] if se.fields.assignee.displayName else 'Unassigned'
+        
+        # Determine status category
+        status_lower = se.fields.status.name.lower() if hasattr(se.fields, 'status') else 'unknown'
+        if 'done' in status_lower or 'complete' in status_lower:
+            team_stats[team]['Done'] += 1
+        elif 'progress' in status_lower:
+            team_stats[team]['In Progress'] += 1
+        else:
+            team_stats[team]['Not Started'] += 1
+        
+        team_stats[team]['total'] += 1
     
     # Generate HTML report
     output_file = f"unified_weekly_report_{version.replace('.', '_')}.html"
@@ -1073,6 +1094,23 @@ def main():
         
         {'<div class="alert-box info"><strong>Status:</strong> All test executions completed ✓</div>' if len(sub_execs) > 0 and sub_exec_completed == len(sub_execs) else ''}
         {'<div class="alert-box"><strong>Status:</strong> ' + str(sub_exec_not_started) + ' test executions not started</div>' if sub_exec_not_started > 0 else ''}
+        
+        <h3>Sub Test Executions by Team</h3>
+        <table>
+            <thead>
+                <tr>
+                    <th>Team/Assignee</th>
+                    <th>Total</th>
+                    <th>Done</th>
+                    <th>In Progress</th>
+                    <th>Not Started</th>
+                    <th>Completion %</th>
+                </tr>
+            </thead>
+            <tbody>
+                {''.join([f'<tr><td><strong>{team}</strong></td><td>{stats["total"]}</td><td>{stats["Done"]}</td><td>{stats["In Progress"]}</td><td>{stats["Not Started"]}</td><td>{(stats["Done"]/stats["total"]*100):.1f}%</td></tr>' for team, stats in sorted(team_stats.items(), key=lambda x: (-x[1]["total"], x[0]))]) if team_stats else '<tr><td colspan="6" style="text-align: center;">No sub test executions found</td></tr>'}
+            </tbody>
+        </table>
 
         <div class="footer">
             <p>Generated from Jira Project: DP (DefensePro) | Version: {version}</p>
