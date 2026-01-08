@@ -467,10 +467,11 @@ def calculate_historical_trends(bugs, weeks=8):
     # Priority breakdown
     priority_counts = Counter([b.fields.priority.name if hasattr(b.fields, 'priority') and b.fields.priority else 'None' for b in bugs])
     
-    # Release distribution (bugs across releases currently open on dev)
+    # Release distribution (bugs across releases currently open - both Dev and QA)
     release_dist = {}
     for bug in bugs:
-        if get_bug_status_at_date(bug, end_date) == 'dev':
+        bug_status = get_bug_status_at_date(bug, end_date)
+        if bug_status in ['dev', 'qa']:
             if hasattr(bug.fields, 'fixVersions') and bug.fields.fixVersions:
                 for version in bug.fields.fixVersions:
                     priority = bug.fields.priority.name if hasattr(bug.fields, 'priority') and bug.fields.priority else 'None'
@@ -1025,7 +1026,7 @@ def main():
         <p>Tracking only HIGH, HIGHEST, and CRITICAL priority bugs from {historical_trends['high_sev_dates'][0] if historical_trends['high_sev_dates'] else 'N/A'} to present - Current: Total: {historical_trends['high_sev_total'][-1] if historical_trends['high_sev_total'] else 0}, On Dev: {historical_trends['high_sev_dev'][-1] if historical_trends['high_sev_dev'] else 0}, On QA: {historical_trends['high_sev_qa'][-1] if historical_trends['high_sev_qa'] else 0}</p>
         {high_sev_chart_html}
         
-        {f'<h2>Open Bugs Distribution Across Releases</h2><p>In-progress bugs currently being worked on by Dev - Total releases with active work: {len(historical_trends["release_distribution"])}</p>{release_dist_chart_html}' if release_dist_chart_html else ''}
+        {f'<h2>Open Bugs Distribution Across Releases</h2><p>All open bugs (Dev + QA) across releases - Total releases with open bugs: {len(historical_trends["release_distribution"])}</p>{release_dist_chart_html}' if release_dist_chart_html else ''}
         
         {priority_html}
 
