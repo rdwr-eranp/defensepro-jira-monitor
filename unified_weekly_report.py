@@ -1113,6 +1113,22 @@ def main():
             </tbody>
         </table>
 
+        <h3>All Sub Test Executions</h3>
+        <table>
+            <thead>
+                <tr>
+                    <th>Key</th>
+                    <th>Summary</th>
+                    <th>Scrum Team</th>
+                    <th>Assignee</th>
+                    <th>Status</th>
+                </tr>
+            </thead>
+            <tbody>
+                {''.join([f'<tr><td><a href="https://rwrnd.atlassian.net/browse/{se.key}">{se.key}</a></td><td>{html.escape(se.fields.summary)}</td><td>{html.escape(se.fields.customfield_10129.value if hasattr(se.fields, "customfield_10129") and se.fields.customfield_10129 else "Unassigned")}</td><td>{html.escape(se.fields.assignee.displayName if hasattr(se.fields, "assignee") and se.fields.assignee else "Unassigned")}</td><td>{html.escape(se.fields.status.name)}</td></tr>' for se in sorted(sub_execs, key=lambda x: (getattr(x.fields, "customfield_10129", None).value if hasattr(x.fields, "customfield_10129") and getattr(x.fields, "customfield_10129", None) else "ZZZ", x.fields.summary))]) if sub_execs else '<tr><td colspan="5" style="text-align: center;">No sub test executions found</td></tr>'}
+            </tbody>
+        </table>
+
         <div class="footer">
             <p>Generated from Jira Project: DP (DefensePro) | Version: {version}</p>
             <p><strong>Note:</strong> This is a READ-ONLY report. No Jira issues were created or modified during this analysis.</p>
