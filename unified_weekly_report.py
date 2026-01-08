@@ -766,18 +766,26 @@ def main():
     
     # Create bug status chart
     fig_bugs = go.Figure()
+    
+    # Calculate max value for proper y-axis range
+    max_value = max(len(bugs_on_dev), len(bugs_on_qa), len(bugs_closed))
+    y_range = [0, max_value * 1.15]  # Add 15% padding at the top
+    
     fig_bugs.add_trace(go.Bar(
         x=['Bugs on Dev', 'Bugs on QA', 'Closed'],
         y=[len(bugs_on_dev), len(bugs_on_qa), len(bugs_closed)],
         marker_color=['#ff9800', '#2196f3', '#4caf50'],
         text=[len(bugs_on_dev), len(bugs_on_qa), len(bugs_closed)],
-        textposition='outside'
+        textposition='outside',
+        textfont=dict(size=14)
     ))
     fig_bugs.update_layout(
         title=f'Bug Status Distribution - {version}',
         xaxis_title='Status',
         yaxis_title='Count',
-        height=400
+        yaxis=dict(range=y_range),
+        height=400,
+        margin=dict(t=80, b=60, l=60, r=40)
     )
     
     # Generate HTML
