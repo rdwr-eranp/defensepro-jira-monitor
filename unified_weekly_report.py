@@ -206,9 +206,9 @@ def get_automation_data(conn, jira, version, builds, sprint_start, sprint_end):
     available_tests_query = f"""
         SELECT 
                CASE 
-                   WHEN d.platform IN ('FPGA_NP4_A', 'FPGA_NP4_Plus', 'FPGA_NP4_A_2_Devices', 'FPGA_NP4_A_Single_Device') THEN 'FPGA'
-                   WHEN d.platform IN ('SOFTWARE', 'Vision_Software', 'VA_Software', 'Octeontx2_Software') THEN 'Software'
-                   WHEN d.platform IN ('MRQ_A', 'MRQ_B', 'MRQ_X') THEN 'EZchip'
+                   WHEN d.platform IN ('UHT', 'MRQP', 'MR2') THEN 'FPGA'
+                   WHEN d.platform IN ('ESXI', 'KVM', 'VL3', 'HT2') THEN 'Software'
+                   WHEN d.platform IN ('MRQ_X') THEN 'EZchip'
                    ELSE 'Other'
                END as platform_type,
                CASE WHEN p.name LIKE '%-Routing' THEN 'Routing' ELSE 'Transparent' END as mode,
@@ -220,9 +220,9 @@ def get_automation_data(conn, jira, version, builds, sprint_start, sprint_end):
           AND te.mode = 'regression'
         GROUP BY 
                CASE 
-                   WHEN d.platform IN ('FPGA_NP4_A', 'FPGA_NP4_Plus', 'FPGA_NP4_A_2_Devices', 'FPGA_NP4_A_Single_Device') THEN 'FPGA'
-                   WHEN d.platform IN ('SOFTWARE', 'Vision_Software', 'VA_Software', 'Octeontx2_Software') THEN 'Software'
-                   WHEN d.platform IN ('MRQ_A', 'MRQ_B', 'MRQ_X') THEN 'EZchip'
+                   WHEN d.platform IN ('UHT', 'MRQP', 'MR2') THEN 'FPGA'
+                   WHEN d.platform IN ('ESXI', 'KVM', 'VL3', 'HT2') THEN 'Software'
+                   WHEN d.platform IN ('MRQ_X') THEN 'EZchip'
                    ELSE 'Other'
                END,
                CASE WHEN p.name LIKE '%-Routing' THEN 'Routing' ELSE 'Transparent' END
