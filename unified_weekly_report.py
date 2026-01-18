@@ -202,8 +202,15 @@ def get_automation_data(conn, jira, version, builds, sprint_start, sprint_end):
     }
     
     # Get available tests for coverage calculation (from 10.12.0.0 and 10.11.0.0)
+    # Count unique test cases per platform_type and mode (not per platform)
     available_tests_query = f"""
-        SELECT d.platform,
+        SELECT 
+               CASE 
+                   WHEN d.platform IN ('FPGA_NP4_A', 'FPGA_NP4_Plus', 'FPGA_NP4_A_2_Devices', 'FPGA_NP4_A_Single_Device') THEN 'FPGA'
+                   WHEN d.platform IN ('SOFTWARE', 'Vision_Software', 'VA_Software', 'Octeontx2_Software') THEN 'Software'
+                   WHEN d.platform IN ('MRQ_A', 'MRQ_B', 'MRQ_X') THEN 'EZchip'
+                   ELSE 'Other'
+               END as platform_type,
                CASE WHEN p.name LIKE '%-Routing' THEN 'Routing' ELSE 'Transparent' END as mode,
                COUNT(DISTINCT te.test_id) as available_tests
         FROM test_execution te
@@ -211,10 +218,16 @@ def get_automation_data(conn, jira, version, builds, sprint_start, sprint_end):
         JOIN profile p ON te.profile_id = p.id
         WHERE te.version IN ('10.12.0.0', '10.11.0.0')
           AND te.mode = 'regression'
-        GROUP BY d.platform, CASE WHEN p.name LIKE '%-Routing' THEN 'Routing' ELSE 'Transparent' END
+        GROUP BY 
+               CASE 
+                   WHEN d.platform IN ('FPGA_NP4_A', 'FPGA_NP4_Plus', 'FPGA_NP4_A_2_Devices', 'FPGA_NP4_A_Single_Device') THEN 'FPGA'
+                   WHEN d.platform IN ('SOFTWARE', 'Vision_Software', 'VA_Software', 'Octeontx2_Software') THEN 'Software'
+                   WHEN d.platform IN ('MRQ_A', 'MRQ_B', 'MRQ_X') THEN 'EZchip'
+                   ELSE 'Other'
+               END,
+               CASE WHEN p.name LIKE '%-Routing' THEN 'Routing' ELSE 'Transparent' END
     """
     available_df = pd.read_sql(available_tests_query, conn)
-    available_df['platform_type'] = available_df['platform'].map(platform_type_map)
     available_df['platform_type_mode'] = available_df['platform_type'] + ' - ' + available_df['mode']
     
     # Platform Type + Mode breakdown (aggregated) with coverage
