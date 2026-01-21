@@ -1092,18 +1092,18 @@ def main():
         <h2>Bugs on Dev ({len(bugs_on_dev)} bugs)</h2>
         <p>Status: In Progress, To-Do, or None (assigned but not started)</p>
         <table>
-            <thead><tr><th>Key</th><th>Priority</th><th>Summary</th><th>Status</th></tr></thead>
+            <thead><tr><th>Key</th><th>Priority</th><th>Summary</th><th>Status</th><th>Assignee</th></tr></thead>
             <tbody>
-                {''.join([f'<tr><td><a href="https://rwrnd.atlassian.net/browse/{bug.key}" class="bug-key">{bug.key}</a></td><td>{html.escape(bug.fields.priority.name) if hasattr(bug.fields, "priority") and bug.fields.priority else "N/A"}</td><td>{html.escape(bug.fields.summary)}</td><td>{html.escape(bug.fields.status.name)}</td></tr>' for bug in bugs_on_dev[:20]]) if bugs_on_dev else '<tr><td colspan="4" style="text-align: center;">No bugs on Dev</td></tr>'}
+                {''.join([f'<tr><td><a href="https://rwrnd.atlassian.net/browse/{bug.key}" class="bug-key">{bug.key}</a></td><td>{html.escape(bug.fields.priority.name) if hasattr(bug.fields, "priority") and bug.fields.priority else "N/A"}</td><td>{html.escape(bug.fields.summary)}</td><td>{html.escape(bug.fields.status.name)}</td><td>{html.escape(bug.fields.assignee.displayName) if hasattr(bug.fields, "assignee") and bug.fields.assignee else "Unassigned"}</td></tr>' for bug in bugs_on_dev[:20]]) if bugs_on_dev else '<tr><td colspan="5" style="text-align: center;">No bugs on Dev</td></tr>'}
             </tbody>
         </table>
 
         <h2>Bugs on QA ({len(bugs_on_qa)} bugs)</h2>
         <p>Status: Completed - awaiting QA verification</p>
         <table>
-            <thead><tr><th>Key</th><th>Priority</th><th>Summary</th><th>Status</th></tr></thead>
+            <thead><tr><th>Key</th><th>Priority</th><th>Summary</th><th>Status</th><th>Assignee</th></tr></thead>
             <tbody>
-                {''.join([f'<tr><td><a href="https://rwrnd.atlassian.net/browse/{bug.key}" class="bug-key">{bug.key}</a></td><td>{html.escape(bug.fields.priority.name) if hasattr(bug.fields, "priority") and bug.fields.priority else "N/A"}</td><td>{html.escape(bug.fields.summary)}</td><td>{html.escape(bug.fields.status.name)}</td></tr>' for bug in bugs_on_qa[:20]]) if bugs_on_qa else '<tr><td colspan="4" style="text-align: center;">No bugs on QA</td></tr>'}
+                {''.join([f'<tr><td><a href="https://rwrnd.atlassian.net/browse/{bug.key}" class="bug-key">{bug.key}</a></td><td>{html.escape(bug.fields.priority.name) if hasattr(bug.fields, "priority") and bug.fields.priority else "N/A"}</td><td>{html.escape(bug.fields.summary)}</td><td>{html.escape(bug.fields.status.name)}</td><td>{html.escape(bug.fields.assignee.displayName) if hasattr(bug.fields, "assignee") and bug.fields.assignee else "Unassigned"}</td></tr>' for bug in bugs_on_qa[:20]]) if bugs_on_qa else '<tr><td colspan="5" style="text-align: center;">No bugs on QA</td></tr>'}
             </tbody>
         </table>
 
