@@ -121,7 +121,8 @@ def get_builds_for_version(conn, version, sprint_start, sprint_end):
 
 def get_automation_data(conn, jira, version, builds, sprint_start, sprint_end):
     """Get automation test data for the sprint period"""
-    builds_str = ','.join([f"'{b}'" for b in builds.split(',')])
+    # builds are integers in the database, don't quote them
+    builds_str = ','.join([b.strip() for b in builds.split(',')])
     
     # Get tests executed in sprint
     tests_query = f"""
