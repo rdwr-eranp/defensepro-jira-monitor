@@ -1197,6 +1197,27 @@ def main():
             </tbody>
         </table>
 
+        <h3>Sub Test Execution Analysis</h3>
+        {'<div class="alert-box info"><strong>Status:</strong> No sub test executions found for this version. Test execution tracking may not have started yet, or tests are being tracked in a different manner.</div>' if len(sub_execs) == 0 else ''}
+        <div class="observation-list">
+            <ul>
+                <li><strong>Total Test Executions:</strong> {len(sub_execs)}</li>
+                <li><strong>Completion Status:</strong> 
+                    {'All test executions completed ✓' if len(sub_execs) > 0 and sub_exec_completed == len(sub_execs) else 
+                     f"{sub_exec_completed}/{len(sub_execs)} completed ({sub_exec_completed/max(len(sub_execs),1)*100:.1f}%)" if len(sub_execs) > 0 else
+                     'No active test executions (0/0 completed)'}
+                </li>
+                <li><strong>In Progress:</strong> {sub_exec_in_progress} test execution{'s' if sub_exec_in_progress != 1 else ''} currently being executed</li>
+                <li><strong>Not Started:</strong> {sub_exec_not_started} test execution{'s' if sub_exec_not_started != 1 else ''} pending</li>
+                <li><strong>Recommendation:</strong> 
+                    {'⚠️ Sub test execution tracking should be initiated for this release version to ensure proper test coverage validation' if len(sub_execs) == 0 else
+                     '✓ Test execution in progress - continue monitoring' if sub_exec_in_progress > 0 and sub_exec_not_started == 0 else
+                     '✓ All test executions completed successfully!' if sub_exec_completed == len(sub_execs) and len(sub_execs) > 0 else
+                     f'⚠️ {sub_exec_not_started} test execution{"s" if sub_exec_not_started != 1 else ""} not started - review test execution plan'}
+                </li>
+            </ul>
+        </div>
+
         <div class="footer">
             <p>Generated from Jira Project: DP (DefensePro) | Version: {version}</p>
             <p><strong>Note:</strong> This is a READ-ONLY report. No Jira issues were created or modified during this analysis.</p>
