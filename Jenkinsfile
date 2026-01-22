@@ -10,8 +10,9 @@ pipeline {
     environment {
         // Release version to track
         VERSION = '10.13.0.0'
-        // Build range for CI iteration status (comma-separated)
-        BUILDS = '100,101,102,103,104,105,106'
+        // Build range is now auto-detected from database
+        // Set BUILDS only if you want to override auto-detection
+        // BUILDS = ''
     }
     
     stages {
@@ -78,14 +79,14 @@ pipeline {
                                 sh """
                                     . venv/bin/activate
                                     export VERSION=${VERSION}
-                                    export BUILDS=${BUILDS}
+                                    # BUILDS is auto-detected from database
                                     python3 unified_weekly_report.py
                                 """
                             } else {
                                 bat """
                                     call venv\\Scripts\\activate.bat
                                     set VERSION=${VERSION}
-                                    set BUILDS=${BUILDS}
+                                    REM BUILDS is auto-detected from database
                                     python unified_weekly_report.py
                                 """
                             }
@@ -97,7 +98,7 @@ pipeline {
                                 cd ${WORKSPACE}
                                 . venv/bin/activate
                                 export VERSION=${VERSION}
-                                export BUILDS=${BUILDS}
+                                # BUILDS is auto-detected from database
                                 
                                 # Load environment variables from .env file
                                 if [ -f .env ]; then
@@ -118,7 +119,7 @@ pipeline {
                                 cd %WORKSPACE%
                                 call venv\\Scripts\\activate.bat
                                 set VERSION=${VERSION}
-                                set BUILDS=${BUILDS}
+                                REM BUILDS is auto-detected from database
                                 
                                 REM Load environment variables from .env file
                                 if exist .env (
