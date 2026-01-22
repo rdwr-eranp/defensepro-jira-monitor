@@ -626,7 +626,8 @@ def get_bug_status_at_date(issue, target_date):
 
 def main():
     version = os.getenv('VERSION')
-    builds_env = os.getenv('BUILDS')  # None if not set
+    # BUILDS env var is deprecated - always auto-detect from database
+    # builds_env = os.getenv('BUILDS')  # Removed - use auto-detect
     
     if not version:
         version = input("Enter version (e.g., 10.12.0.0): ").strip()
@@ -646,18 +647,14 @@ def main():
     sprint_start = sprint.startDate
     sprint_end = sprint.endDate
     
-    # Auto-detect builds if not specified
-    if builds_env:
-        builds = builds_env
-        print(f"Using specified builds: {builds}")
+    # Auto-detect builds from database (always)
+    print("Auto-detecting builds from database...")
+    builds = get_builds_for_version(conn, version, sprint_start, sprint_end)
+    if builds:
+        print(f"✓ Auto-detected builds: {builds}")
     else:
-        print("Auto-detecting builds from database...")
-        builds = get_builds_for_version(conn, version, sprint_start, sprint_end)
-        if builds:
-            print(f"✓ Auto-detected builds: {builds}")
-        else:
-            print("⚠️  No builds found for this version in sprint period")
-            builds = ''  # Will result in 0 test executions
+        print("⚠️  No builds found for this version in sprint period")
+        builds = ''  # Will result in 0 test executions
     print(f"Sprint: {sprint.name}")
     print(f"Period: {sprint_start[:10]} to {sprint_end[:10]}\n")
     
