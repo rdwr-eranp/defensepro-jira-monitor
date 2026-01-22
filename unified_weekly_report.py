@@ -103,6 +103,22 @@ def get_current_sprint(jira, board_id=None):
     
     return FakeSprint()
 
+def get_builds_for_version(conn, version, sprint_start, sprint_end):
+    """Auto-detect builds for a version within the sprint date range"""
+    query = f"""
+        SELECT DISTINCT build
+        FROM test_execution
+        WHERE version = '{version}'
+          AND mode = 'regression'
+          AND start_time BETWEEN '{sprint_start}' AND '{sprint_end}'
+        ORDER BY build
+    """
+    df = pd.read_sql(query, conn)
+    if df.empty:
+        return None
+    builds = df['build'].tolist()
+    return ','.join([str(b) for b in builds])
+
 def get_automation_data(conn, jira, version, builds, sprint_start, sprint_end):
     """Get automation test data for the sprint period"""
     builds_str = ','.join([f"'{b}'" for b in builds.split(',')])
@@ -609,7 +625,7 @@ def get_bug_status_at_date(issue, target_date):
 
 def main():
     version = os.getenv('VERSION')
-    builds = os.getenv('BUILDS', '100,101,102,103,104,105,106')
+    builds_env = os.getenv('BUILDS')  # None if not set
     
     if not version:
         version = input("Enter version (e.g., 10.12.0.0): ").strip()
@@ -628,6 +644,19 @@ def main():
     sprint = get_current_sprint(jira)
     sprint_start = sprint.startDate
     sprint_end = sprint.endDate
+    
+    # Auto-detect builds if not specified
+    if builds_env:
+        builds = builds_env
+        print(f"Using specified builds: {builds}")
+    else:
+        print("Auto-detecting builds from database...")
+        builds = get_builds_for_version(conn, version, sprint_start, sprint_end)
+        if builds:
+            print(f"✓ Auto-detected builds: {builds}")
+        else:
+            print("⚠️  No builds found for this version in sprint period")
+            builds = ''  # Will result in 0 test executions
     print(f"Sprint: {sprint.name}")
     print(f"Period: {sprint_start[:10]} to {sprint_end[:10]}\n")
     
