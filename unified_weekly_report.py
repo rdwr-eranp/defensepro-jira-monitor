@@ -854,9 +854,31 @@ def main():
         margin=dict(t=100, b=60, l=60, r=40)
     )
     
+    # Create sub test execution status chart (pie chart)
+    fig_sub_exec = go.Figure()
+    if len(sub_execs) > 0:
+        labels = ['Completed', 'In Progress', 'Not Started']
+        values = [sub_exec_completed, sub_exec_in_progress, sub_exec_not_started]
+        colors = ['#4caf50', '#2196f3', '#ff9800']
+        
+        fig_sub_exec.add_trace(go.Pie(
+            labels=labels,
+            values=values,
+            marker=dict(colors=colors),
+            textinfo='label+value+percent',
+            textfont=dict(size=14),
+            hole=0.4  # Donut chart style
+        ))
+        fig_sub_exec.update_layout(
+            title=f'Sub Test Execution Status - {version}',
+            height=400,
+            margin=dict(t=80, b=40, l=40, r=40)
+        )
+    
     # Generate HTML
     automation_chart_html = fig_automation.to_html(include_plotlyjs='inline', div_id='automation-chart', full_html=False) if automation_data['platform_data'] else ""
     bugs_chart_html = fig_bugs.to_html(include_plotlyjs='inline' if not automation_data['platform_data'] else False, div_id='bugs-chart', full_html=False)
+    sub_exec_chart_html = fig_sub_exec.to_html(include_plotlyjs=False, div_id='sub-exec-chart', full_html=False) if len(sub_execs) > 0 else ""
     
     # Create historical bug trend charts
     fig_historical = go.Figure()
@@ -1136,6 +1158,8 @@ def main():
 
         <div class="section-title">🧪 Sub Test Execution Status</div>
         <p><strong>Total:</strong> {len(sub_execs)} | <strong>Completed:</strong> {sub_exec_completed} ({sub_exec_completed/max(len(sub_execs),1)*100:.1f}%) | <strong>In Progress:</strong> {sub_exec_in_progress} | <strong>Not Started:</strong> {sub_exec_not_started}</p>
+        
+        {sub_exec_chart_html}
         
         {'<div class="alert-box info"><strong>Status:</strong> All test executions completed ✓</div>' if len(sub_execs) > 0 and sub_exec_completed == len(sub_execs) else ''}
         {'<div class="alert-box"><strong>Status:</strong> ' + str(sub_exec_not_started) + ' test executions not started</div>' if sub_exec_not_started > 0 else ''}
