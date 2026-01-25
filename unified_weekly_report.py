@@ -670,14 +670,10 @@ def main():
         print(f"⚠️  WARNING: Version {version} is ARCHIVED in Jira")
         print(f"   This is a historical version with no active work.\n")
     
-    # Get bug data - filter by state for active versions
+    # Get bug data - fetch ALL bugs to get accurate counts for all categories
     print("Fetching bug data...")
-    if version_info['is_active']:
-        # For active versions, fetch only open bugs (exclude Done/Accepted)
-        jql = f'project = DP AND fixVersion = "{version}" AND type = Bug AND statusCategory != Done'
-    else:
-        # For released versions, fetch all bugs to show closure status
-        jql = f'project = DP AND fixVersion = "{version}" AND type = Bug'
+    # Always fetch all bugs to accurately count Dev, QA, and Closed
+    jql = f'project = DP AND fixVersion = "{version}" AND type = Bug'
     
     bugs = jira.search_issues(jql, maxResults=False, expand='changelog')
     print(f"✓ Found {len(bugs)} bugs\n")
