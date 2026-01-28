@@ -462,9 +462,10 @@ def calculate_historical_trends(bugs, weeks=8):
     while current_date <= end_date:
         dates.append(current_date.strftime('%Y-%m-%d'))
         
-        total = sum(1 for bug in bugs if datetime.strptime(bug.fields.created[:10], '%Y-%m-%d').date() <= current_date)
         dev = sum(1 for bug in bugs if datetime.strptime(bug.fields.created[:10], '%Y-%m-%d').date() <= current_date and get_bug_status_at_date(bug, current_date) == 'dev')
         qa = sum(1 for bug in bugs if datetime.strptime(bug.fields.created[:10], '%Y-%m-%d').date() <= current_date and get_bug_status_at_date(bug, current_date) == 'qa')
+        # Total = open bugs only (Dev + QA), excluding closed/accepted bugs
+        total = dev + qa
         
         total_counts.append(total)
         dev_counts.append(dev)
@@ -484,9 +485,10 @@ def calculate_historical_trends(bugs, weeks=8):
     while current_date <= end_date:
         high_sev_dates.append(current_date.strftime('%Y-%m-%d'))
         
-        total = sum(1 for bug in high_sev_bugs if datetime.strptime(bug.fields.created[:10], '%Y-%m-%d').date() <= current_date)
         dev = sum(1 for bug in high_sev_bugs if datetime.strptime(bug.fields.created[:10], '%Y-%m-%d').date() <= current_date and get_bug_status_at_date(bug, current_date) == 'dev')
         qa = sum(1 for bug in high_sev_bugs if datetime.strptime(bug.fields.created[:10], '%Y-%m-%d').date() <= current_date and get_bug_status_at_date(bug, current_date) == 'qa')
+        # Total = open bugs only (Dev + QA), excluding closed/accepted bugs
+        total = dev + qa
         
         high_sev_total.append(total)
         high_sev_dev.append(dev)
@@ -882,7 +884,7 @@ def main():
         x=historical_trends['dates'],
         y=historical_trends['total'],
         mode='lines+markers',
-        name='Total Bugs',
+        name='Total Open Bugs',
         line=dict(color='#003366', width=4),
         marker=dict(size=8)
     ))
