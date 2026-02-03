@@ -740,7 +740,12 @@ def main():
     
     sub_execs = jira.search_issues(sub_exec_jql, maxResults=False, fields='summary,status,assignee,customfield_10129')
     
-    sub_exec_completed = sum(1 for se in sub_execs if hasattr(se.fields, 'status') and 'done' in se.fields.status.name.lower())
+    # Helper to check if status indicates completion (Done, Accepted, or Complete)
+    def is_completed_status(status_name):
+        status_lower = status_name.lower()
+        return 'done' in status_lower or 'accepted' in status_lower or 'complete' in status_lower
+    
+    sub_exec_completed = sum(1 for se in sub_execs if hasattr(se.fields, 'status') and is_completed_status(se.fields.status.name))
     sub_exec_in_progress = sum(1 for se in sub_execs if hasattr(se.fields, 'status') and 'in progress' in se.fields.status.name.lower())
     sub_exec_not_started = len(sub_execs) - sub_exec_completed - sub_exec_in_progress
     
@@ -761,7 +766,7 @@ def main():
         
         # Determine status category
         status_lower = se.fields.status.name.lower() if hasattr(se.fields, 'status') else 'unknown'
-        if 'done' in status_lower or 'complete' in status_lower:
+        if 'done' in status_lower or 'accepted' in status_lower or 'complete' in status_lower:
             team_stats[team]['Done'] += 1
         elif 'progress' in status_lower:
             team_stats[team]['In Progress'] += 1
