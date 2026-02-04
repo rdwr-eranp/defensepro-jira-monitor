@@ -1425,14 +1425,14 @@ def main():
     fig_bugs = go.Figure()
     
     # Calculate max value for proper y-axis range
-    max_value = max(len(bugs_on_dev), len(bugs_on_qa), len(bugs_closed))
+    max_value = max(len(bugs_on_dev), len(bugs_on_qa), len(bugs_closed_this_week))
     y_range = [0, max_value * 1.25]  # Add 25% padding at the top for text labels
     
     fig_bugs.add_trace(go.Bar(
-        x=['Bugs on Dev', 'Bugs on QA', 'Closed'],
-        y=[len(bugs_on_dev), len(bugs_on_qa), len(bugs_closed)],
+        x=['Bugs on Dev', 'Bugs on QA', 'Closed This Week'],
+        y=[len(bugs_on_dev), len(bugs_on_qa), len(bugs_closed_this_week)],
         marker_color=['#ff9800', '#2196f3', '#4caf50'],
-        text=[len(bugs_on_dev), len(bugs_on_qa), len(bugs_closed)],
+        text=[len(bugs_on_dev), len(bugs_on_qa), len(bugs_closed_this_week)],
         textposition='outside',
         textfont=dict(size=14)
     ))
