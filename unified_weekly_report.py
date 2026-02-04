@@ -1143,6 +1143,50 @@ def get_bug_status_at_date(issue, target_date):
     else:
         return 'dev'
 
+
+def get_bugs_closed_during_period(bugs, start_date, end_date):
+    """
+    Find bugs that transitioned to closed/accepted status during the specified period.
+    Uses changelog to determine when status changed to closed.
+    
+    Returns: list of bugs that were closed during the period
+    """
+    if isinstance(start_date, str):
+        start_date = datetime.strptime(start_date[:10], '%Y-%m-%d').date()
+    if isinstance(end_date, str):
+        end_date = datetime.strptime(end_date[:10], '%Y-%m-%d').date()
+    
+    closed_bugs = []
+    
+    for bug in bugs:
+        changelog = bug.changelog
+        if not hasattr(changelog, 'histories'):
+            continue
+            
+        # Sort histories chronologically
+        sorted_histories = sorted(changelog.histories, key=lambda h: h.created)
+        
+        for history in sorted_histories:
+            change_date = datetime.strptime(history.created[:19], '%Y-%m-%dT%H:%M:%S').date()
+            
+            # Skip changes outside our period
+            if change_date < start_date or change_date > end_date:
+                continue
+            
+            for item in history.items:
+                if item.field == 'status':
+                    new_status = item.toString.lower()
+                    # Check if transitioned to a closed state
+                    if 'accepted' in new_status or 'done' in new_status or 'closed' in new_status:
+                        closed_bugs.append(bug)
+                        break
+            else:
+                continue
+            break  # Found closure, move to next bug
+    
+    return closed_bugs
+
+
 def main():
     version = os.getenv('VERSION')
     # BUILDS env var is deprecated - always auto-detect from database
@@ -1233,6 +1277,10 @@ def main():
             print(f"  ⚠️  Warning: Unknown status for {bug.key}: {status_name} (category: {status_category}). Assigning to Dev.")
             bugs_on_dev.append(bug)
     
+    # Calculate bugs closed during this sprint period
+    print("Calculating bugs closed this week...")
+    bugs_closed_this_week = get_bugs_closed_during_period(bugs, sprint_start, sprint_end)
+    
     # Calculate historical trends
     print("Calculating historical bug trends...")
     historical_trends = calculate_historical_trends(bugs)
@@ -1241,7 +1289,8 @@ def main():
     print(f"\nBug categorization:")
     print(f"  On Dev: {len(bugs_on_dev)}")
     print(f"  On QA: {len(bugs_on_qa)}")
-    print(f"  Closed: {len(bugs_closed)}")
+    print(f"  Closed (total): {len(bugs_closed)}")
+    print(f"  Closed this week: {len(bugs_closed_this_week)}")
     if bugs_on_dev:
         print(f"  Sample Dev bug status: {bugs_on_dev[0].fields.status.name}")
     if bugs_on_qa:
@@ -1714,7 +1763,7 @@ def main():
             <div class="metric-card bugs">
                 <div class="metric-label">Bug Status</div>
                 <div class="metric-number">{len(bugs_on_dev) + len(bugs_on_qa)}</div>
-                <div class="metric-detail">Open: Dev {len(bugs_on_dev)} | QA {len(bugs_on_qa)}<br>Closed: {len(bugs_closed)}</div>
+                <div class="metric-detail">Open: Dev {len(bugs_on_dev)} | QA {len(bugs_on_qa)}<br>Closed this week: {len(bugs_closed_this_week)} | Total: {len(bugs_closed)}</div>
             </div>
             <div class="metric-card automation">
                 <div class="metric-label">Automation Tests</div>
@@ -1877,7 +1926,7 @@ def main():
     print("=" * 70)
     print("SUMMARY")
     print("=" * 70)
-    print(f"Bugs: {len(bugs_on_dev)} on Dev | {len(bugs_on_qa)} on QA | {len(bugs_closed)} closed")
+    print(f"Bugs: {len(bugs_on_dev)} on Dev | {len(bugs_on_qa)} on QA | {len(bugs_closed_this_week)} closed this week | {len(bugs_closed)} total closed")
     print(f"Automation: {automation_data['total_tests']} tests | {automation_data['pass_ratio']:.1f}% pass ratio")
     print(f"Critical Failures: {automation_data.get('critical_failures', 0)} tests failing on all platforms")
     print(f"Sub Test Executions: {sub_exec_completed}/{len(sub_execs)} completed")
