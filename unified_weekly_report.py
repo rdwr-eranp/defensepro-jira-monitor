@@ -4,23 +4,339 @@ Combines weekly work summary with CI iteration automation status
 
 Includes:
 - Bug status tracking (Dev, QA, Accepted)
-- Sub test execution progress
+- Sub test execution progress with Xray data (execution rate, automation coverage)
 - CI Iteration automation status (test executions, coverage, failures)
 - Historical trends
 """
 
 import os
+import time
 from dotenv import load_dotenv
 from jira import JIRA
 import pandas as pd
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 from datetime import datetime, timedelta
-from collections import defaultdict
+from collections import defaultdict, Counter
 import psycopg2
 import html
+import csv
+import requests
+import urllib3
 
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 load_dotenv()
+
+# Xray Cloud API Configuration
+XRAY_AUTH_URL = 'https://xray.cloud.getxray.app/api/v2/authenticate'
+XRAY_GRAPHQL_URL = 'https://xray.cloud.getxray.app/api/v2/graphql'
+XRAY_CLIENT_ID = os.getenv('XRAY_CLIENT_ID', '7DC37640C3B6422D91E978570801CCF8')
+XRAY_CLIENT_SECRET = os.getenv('XRAY_CLIENT_SECRET', '757b92c3039c706606ee29fe74e7c9d28c0a9c80bc013f6999f5910f20d347d8')
+
+
+def get_xray_token():
+    """Authenticate with Xray Cloud API and return bearer token"""
+    try:
+        response = requests.post(
+            XRAY_AUTH_URL,
+            json={'client_id': XRAY_CLIENT_ID, 'client_secret': XRAY_CLIENT_SECRET},
+            headers={'Content-Type': 'application/json'},
+            verify=False,
+            timeout=30
+        )
+        if response.status_code == 200:
+            return response.text.strip('"')
+        else:
+            print(f"   ⚠️ Xray auth failed: {response.status_code}")
+            return None
+    except Exception as e:
+        print(f"   ⚠️ Xray auth error: {e}")
+        return None
+
+
+def get_xray_ids_for_sub_test_executions(jira_keys, max_pages=20):
+    """
+    Find Xray issueIds for a list of Jira keys by scanning Test Executions in Xray.
+    Returns dict mapping jira_key -> xray_id
+    """
+    key_to_xray_id = {}
+    start = 0
+    limit = 100
+    pages = 0
+    
+    query = """
+    query($limit: Int!, $start: Int!) {
+        getTestExecutions(limit: $limit, start: $start) {
+            total
+            results {
+                issueId
+                jira(fields: ["key"])
+            }
+        }
+    }
+    """
+    
+    target_set = set(jira_keys)
+    
+    while pages < max_pages:
+        token = get_xray_token()
+        if not token:
+            break
+        
+        try:
+            response = requests.post(
+                XRAY_GRAPHQL_URL,
+                json={'query': query, 'variables': {'limit': limit, 'start': start}},
+                headers={'Authorization': f'Bearer {token}', 'Content-Type': 'application/json'},
+                verify=False,
+                timeout=60
+            )
+            
+            if response.status_code != 200:
+                break
+            
+            data = response.json()
+            executions = data.get('data', {}).get('getTestExecutions', {})
+            results = executions.get('results', [])
+            total = executions.get('total', 0)
+            
+            if not results:
+                break
+            
+            for exec_data in results:
+                key = exec_data.get('jira', {}).get('key')
+                if key in target_set:
+                    key_to_xray_id[key] = exec_data.get('issueId')
+            
+            # Check if we found all
+            if len(key_to_xray_id) == len(target_set):
+                break
+            
+            start += limit
+            pages += 1
+            
+            if start >= total:
+                break
+                
+        except Exception as e:
+            print(f"   ⚠️ Error getting Xray IDs: {e}")
+            break
+        
+        time.sleep(0.5)  # Brief pause between requests
+    
+    return key_to_xray_id
+
+
+def get_sub_test_execution_xray_data(jira, sub_execs, version):
+    """
+    Query Xray Cloud API to get detailed execution data for Sub Test Executions.
+    Returns a dict with:
+    - executions: list of dicts with per-execution stats
+    - summary: overall totals
+    """
+    print("   Fetching Xray data for Sub Test Executions...")
+    
+    # Empty default result
+    empty_result = {
+        'executions': [],
+        'summary': {
+            'total_tests': 0,
+            'total_executed': 0,
+            'execution_rate': 0,
+            'methods': {},
+            'automation_coverage': 0
+        }
+    }
+    
+    # Get Jira keys
+    jira_keys = [se.key for se in sub_execs]
+    if not jira_keys:
+        return empty_result
+    
+    # Get Xray IDs
+    print(f"   Mapping {len(jira_keys)} Sub Test Executions to Xray IDs...")
+    try:
+        key_to_xray_id = get_xray_ids_for_sub_test_executions(jira_keys)
+        print(f"   Found {len(key_to_xray_id)} Xray mappings")
+    except Exception as e:
+        print(f"   ⚠️ Failed to get Xray mappings: {e}")
+        return empty_result
+    
+    if not key_to_xray_id:
+        print("   ⚠️ No Xray mappings found")
+        return empty_result
+    
+    # Query each Test Execution
+    query_exec = """
+    query($issueId: String!) {
+        getTestExecution(issueId: $issueId) {
+            issueId
+            jira(fields: ["key", "summary"])
+            testRuns(limit: 100) {
+                total
+                results {
+                    status { name }
+                    test {
+                        issueId
+                        jira(fields: ["key"])
+                    }
+                }
+            }
+        }
+    }
+    """
+    
+    executions = []
+    all_test_keys = set()
+    processed = 0
+    
+    for se in sub_execs:
+        jira_key = se.key
+        xray_id = key_to_xray_id.get(jira_key)
+        processed += 1
+        
+        exec_data = {
+            'key': jira_key,
+            'summary': se.fields.summary[:50] + '...' if len(se.fields.summary) > 50 else se.fields.summary,
+            'jira_status': se.fields.status.name,
+            'tests': 0,
+            'executed': 0,
+            'statuses': {},
+            'methods': {},
+            'test_keys': []
+        }
+        
+        if not xray_id:
+            executions.append(exec_data)
+            continue
+        
+        print(f"   [{processed}/{len(sub_execs)}] Querying {jira_key}...", end='', flush=True)
+        
+        # Query Xray with shorter timeout
+        for attempt in range(2):  # Reduce retry attempts
+            try:
+                token = get_xray_token()
+                if not token:
+                    print(" auth failed")
+                    break
+                
+                response = requests.post(
+                    XRAY_GRAPHQL_URL,
+                    json={'query': query_exec, 'variables': {'issueId': xray_id}},
+                    headers={'Authorization': f'Bearer {token}', 'Content-Type': 'application/json'},
+                    verify=False,
+                    timeout=15  # Shorter timeout
+                )
+                
+                if response.status_code != 200:
+                    print(f" HTTP {response.status_code}")
+                    continue
+                
+                data = response.json()
+                if 'errors' in data:
+                    print(" API error")
+                    continue
+                
+                te_data = data.get('data', {}).get('getTestExecution')
+                if not te_data:
+                    print(" no data")
+                    break
+                
+                test_runs = te_data.get('testRuns', {})
+                exec_data['tests'] = test_runs.get('total', 0)
+                
+                for run in test_runs.get('results', []):
+                    status = run.get('status', {}).get('name', 'Unknown')
+                    test = run.get('test', {})
+                    test_key = test.get('jira', {}).get('key') if test else None
+                    
+                    exec_data['statuses'][status] = exec_data['statuses'].get(status, 0) + 1
+                    
+                    # Count executed (not TO DO)
+                    if status.upper() not in ['TO DO', 'TODO']:
+                        exec_data['executed'] += 1
+                    
+                    if test_key:
+                        exec_data['test_keys'].append(test_key)
+                        all_test_keys.add(test_key)
+                
+                print(f" {exec_data['tests']} tests, {exec_data['executed']} executed")
+                break  # Success
+                
+            except requests.exceptions.Timeout:
+                print(" timeout", end='')
+                time.sleep(1)
+            except Exception as e:
+                print(f" error: {str(e)[:30]}", end='')
+                time.sleep(1)
+        
+        executions.append(exec_data)
+        time.sleep(0.3)  # Brief pause
+    
+    # Get Rally Test Method from Jira for all unique tests
+    print(f"   Getting Rally Test Method from Jira for {len(all_test_keys)} unique tests...")
+    test_methods = {}
+    
+    for test_key in list(all_test_keys)[:200]:  # Limit to avoid too many API calls
+        try:
+            issue = jira.issue(test_key, fields='customfield_10154')
+            method = getattr(issue.fields, 'customfield_10154', None)
+            if method and hasattr(method, 'value'):
+                test_methods[test_key] = method.value
+            else:
+                test_methods[test_key] = 'NA'
+        except Exception:
+            test_methods[test_key] = 'NA'
+    
+    # Update executions with methods
+    all_methods = Counter()
+    for exec_data in executions:
+        exec_methods = Counter()
+        for test_key in exec_data['test_keys']:
+            method = test_methods.get(test_key, 'NA')
+            exec_methods[method] += 1
+        exec_data['methods'] = dict(exec_methods)
+        all_methods.update(exec_methods)
+    
+    # Calculate summary with detailed automation metrics
+    total_tests = sum(e['tests'] for e in executions)
+    total_executed = sum(e['executed'] for e in executions)
+    total_with_methods = sum(all_methods.values()) if all_methods else 0
+    
+    automated_count = all_methods.get('Automated', 0)
+    candidate_count = all_methods.get('Automation Candidate', 0)
+    manual_count = all_methods.get('Manual', 0)
+    na_count = all_methods.get('NA', 0)
+    
+    # Calculate rates (excluding NA from automation potential calculation)
+    tests_with_method = automated_count + candidate_count + manual_count
+    
+    summary = {
+        'total_tests': total_tests,
+        'total_executed': total_executed,
+        'testing_coverage': (total_executed / total_tests * 100) if total_tests > 0 else 0,
+        'methods': dict(all_methods),
+        # Method counts
+        'automated_count': automated_count,
+        'candidate_count': candidate_count,
+        'manual_count': manual_count,
+        'na_count': na_count,
+        # Method rates (as percentage of total tests with method info)
+        'automated_rate': (automated_count / total_with_methods * 100) if total_with_methods > 0 else 0,
+        'candidate_rate': (candidate_count / total_with_methods * 100) if total_with_methods > 0 else 0,
+        'manual_rate': (manual_count / total_with_methods * 100) if total_with_methods > 0 else 0,
+        'na_rate': (na_count / total_with_methods * 100) if total_with_methods > 0 else 0,
+        # Automation metrics
+        'automation_coverage': (automated_count / tests_with_method * 100) if tests_with_method > 0 else 0,
+        'automation_potential': ((automated_count + candidate_count) / tests_with_method * 100) if tests_with_method > 0 else 0,
+        # Legacy field for compatibility
+        'execution_rate': (total_executed / total_tests * 100) if total_tests > 0 else 0,
+    }
+    
+    print(f"   ✓ Xray data: {total_tests} tests, {total_executed} executed ({summary['testing_coverage']:.1f}%)")
+    print(f"   ✓ Automation: {automated_count} automated, {candidate_count} candidates, {manual_count} manual")
+    
+    return {'executions': executions, 'summary': summary}
 
 def get_version_info(jira, version_name):
     """Get version information to check if it's released or active"""
@@ -55,6 +371,88 @@ def get_version_info(jira, version_name):
     except Exception as e:
         print(f"⚠️  Could not fetch version info: {e}\n")
         return {'name': version_name, 'released': False, 'archived': False, 'is_active': True}
+
+def get_test_method_distribution(jira, version):
+    """
+    Get test method distribution for Tests related to sub test executions.
+    Reads from pre-generated CSV file if available, otherwise queries Jira directly.
+    
+    Tests have a Method field (customfield_10154) with values:
+    - Automated
+    - Manual  
+    - Automation Candidate
+    - Not Specified (null/empty)
+    """
+    csv_file = f"test_method_distribution_sub_exec_topics_{version.replace('.', '_')}.csv"
+    
+    # Try to read from pre-generated CSV first
+    if os.path.exists(csv_file):
+        print(f"   Loading test method data from {csv_file}...")
+        tests_data = []
+        try:
+            with open(csv_file, 'r', encoding='utf-8') as f:
+                reader = csv.DictReader(f)
+                tests_data = list(reader)
+            
+            # Count by method
+            method_counts = Counter()
+            executed_by_method = Counter()
+            not_executed_by_method = Counter()
+            
+            for test in tests_data:
+                method = test.get('Method', 'Not Specified') or 'Not Specified'
+                status = test.get('Status', 'Unknown')
+                ref_count = int(test.get('Referenced By Executions', 0) or 0)
+                
+                method_counts[method] += 1
+                if ref_count > 0:
+                    executed_by_method[method] += 1
+                else:
+                    not_executed_by_method[method] += 1
+            
+            return {
+                'total_tests': len(tests_data),
+                'by_method': dict(method_counts),
+                'executed_by_method': dict(executed_by_method),
+                'not_executed_by_method': dict(not_executed_by_method),
+                'source': 'csv'
+            }
+        except Exception as e:
+            print(f"   ⚠️ Error reading CSV: {e}")
+    
+    # Fallback: query Tests directly from Jira
+    print(f"   Querying Tests from Jira...")
+    try:
+        # Get Tests that have been associated with this version's test executions
+        # Note: Tests don't have fixVersion, so we query all Tests and count by method
+        tests = jira.search_issues(
+            'project = DP AND type = Test',
+            maxResults=500,
+            fields='summary,status,customfield_10154'
+        )
+        
+        method_counts = Counter()
+        for test in tests:
+            method = getattr(test.fields, 'customfield_10154', None)
+            method_val = method.value if method and hasattr(method, 'value') else 'Not Specified'
+            method_counts[method_val] += 1
+        
+        return {
+            'total_tests': len(tests),
+            'by_method': dict(method_counts),
+            'executed_by_method': {},  # Not available from direct query
+            'not_executed_by_method': {},
+            'source': 'jira'
+        }
+    except Exception as e:
+        print(f"   ⚠️ Error querying Jira: {e}")
+        return {
+            'total_tests': 0,
+            'by_method': {},
+            'executed_by_method': {},
+            'not_executed_by_method': {},
+            'source': 'error'
+        }
 
 def connect_to_jira():
     """Connect to Jira using credentials from .env file"""
@@ -542,6 +940,99 @@ def calculate_historical_trends(bugs, weeks=8):
         'release_distribution': release_dist
     }
 
+
+def generate_xray_detail_table(executions):
+    """Generate HTML table for Xray execution details"""
+    if not executions:
+        return ''
+    
+    method_colors = {
+        'Automated': '#17a2b8',
+        'Manual': '#6c757d',
+        'Automation Candidate': '#fd7e14',
+        'NA': '#dc3545'
+    }
+    
+    rows = []
+    for e in executions:
+        if e['tests'] == 0:
+            continue
+        
+        # Calculate rate color
+        rate = (e['executed'] / e['tests'] * 100) if e['tests'] > 0 else 0
+        if rate == 100:
+            rate_color = '#4caf50'
+        elif rate > 0:
+            rate_color = '#ff9800'
+        else:
+            rate_color = '#9e9e9e'
+        
+        # Build method badges
+        method_badges = []
+        methods = e.get('methods', {})
+        for m, c in methods.items():
+            color = method_colors.get(m, '#999999')
+            method_badges.append(
+                f'<span style="background-color:{color}; color:white; '
+                f'padding:1px 6px; border-radius:3px; font-size:11px; margin-right:3px;">'
+                f'{m}: {c}</span>'
+            )
+        methods_html = ''.join(method_badges) if method_badges else '-'
+        
+        # Calculate Automation Coverage: automated / (automated + candidates)
+        automated_count = methods.get('Automated', 0)
+        candidate_count = methods.get('Automation Candidate', 0)
+        total_tests = e['tests']
+        potential = automated_count + candidate_count
+        
+        if potential > 0:
+            auto_coverage = (automated_count / potential) * 100
+            auto_coverage_html = f'<span style="color:#17a2b8; font-weight:bold;">{auto_coverage:.0f}%</span>'
+        else:
+            auto_coverage_html = '<span style="color:#999;">N/A</span>'
+        
+        # Calculate Automation Potential: (automated + candidates) / total tests
+        if total_tests > 0:
+            auto_potential = (potential / total_tests) * 100
+            if auto_potential > 50:
+                potential_color = '#17a2b8'  # cyan - good potential
+            elif auto_potential > 0:
+                potential_color = '#fd7e14'  # orange - some potential
+            else:
+                potential_color = '#999'  # gray - no potential
+            auto_potential_html = f'<span style="color:{potential_color}; font-weight:bold;">{auto_potential:.0f}%</span>'
+        else:
+            auto_potential_html = '-'
+        
+        rows.append(
+            f'<tr>'
+            f'<td><a href="https://rwrnd.atlassian.net/browse/{e["key"]}">{e["key"]}</a></td>'
+            f'<td>{html.escape(e["summary"])}</td>'
+            f'<td>{html.escape(e["jira_status"])}</td>'
+            f'<td style="text-align:center;">{e["tests"]}</td>'
+            f'<td style="text-align:center;">{e["executed"]}</td>'
+            f'<td style="text-align:center; color:{rate_color}; font-weight:bold;">{rate:.0f}%</td>'
+            f'<td>{methods_html}</td>'
+            f'<td style="text-align:center;">{auto_coverage_html}</td>'
+            f'<td style="text-align:center;">{auto_potential_html}</td>'
+            f'</tr>'
+        )
+    
+    if not rows:
+        return ''
+    
+    table_html = (
+        '<table>'
+        '<thead><tr><th>Key</th><th>Summary</th><th>Jira Status</th>'
+        '<th>Tests</th><th>Executed</th><th>Exec Rate</th><th>Methods</th>'
+        '<th>Auto Coverage</th><th>Auto Potential</th></tr></thead>'
+        '<tbody>' + ''.join(rows) + '</tbody>'
+        '</table>'
+    )
+    
+    return table_html
+
+
 def generate_insights(platform_type_data, stats, sprint_name):
     """Generate automated insights from platform type data"""
     insights = []
@@ -740,6 +1231,28 @@ def main():
     
     sub_execs = jira.search_issues(sub_exec_jql, maxResults=False, fields='summary,status,assignee,customfield_10129')
     
+    # Get Xray data for sub test executions (execution rate, automation coverage)
+    print("Fetching Xray data for Sub Test Executions...")
+    try:
+        sub_exec_xray_data = get_sub_test_execution_xray_data(jira, sub_execs, version)
+    except Exception as e:
+        print(f"⚠️ Failed to fetch Xray data: {e}")
+        sub_exec_xray_data = {
+            'executions': [],
+            'summary': {
+                'total_tests': 0,
+                'total_executed': 0,
+                'execution_rate': 0,
+                'methods': {},
+                'automation_coverage': 0
+            }
+        }
+    
+    # Get test method distribution
+    print("Fetching test method distribution...")
+    test_method_data = get_test_method_distribution(jira, version)
+    print(f"✓ Found {test_method_data['total_tests']} tests with method data\n")
+    
     # Helper to check if status indicates completion (Done, Accepted, or Complete)
     def is_completed_status(status_name):
         status_lower = status_name.lower()
@@ -882,6 +1395,85 @@ def main():
     automation_chart_html = fig_automation.to_html(include_plotlyjs='inline', div_id='automation-chart', full_html=False) if automation_data['platform_data'] else ""
     bugs_chart_html = fig_bugs.to_html(include_plotlyjs='inline' if not automation_data['platform_data'] else False, div_id='bugs-chart', full_html=False)
     sub_exec_chart_html = fig_sub_exec.to_html(include_plotlyjs=False, div_id='sub-exec-chart', full_html=False) if len(sub_execs) > 0 else ""
+    
+    # Create Xray execution rate charts
+    xray_exec_rate_chart_html = ""
+    xray_method_chart_html = ""
+    
+    if sub_exec_xray_data['summary']['total_tests'] > 0:
+        summary = sub_exec_xray_data['summary']
+        
+        # Execution Rate Pie Chart
+        fig_xray_exec = go.Figure()
+        executed = summary['total_executed']
+        not_executed = summary['total_tests'] - executed
+        
+        fig_xray_exec.add_trace(go.Pie(
+            labels=['Executed', 'Not Executed'],
+            values=[executed, not_executed],
+            marker=dict(colors=['#4caf50', '#9e9e9e']),
+            textinfo='label+value+percent',
+            textfont=dict(size=14),
+            hole=0.4
+        ))
+        fig_xray_exec.update_layout(
+            title=f'Test Execution Rate (Xray) - {version}',
+            height=350,
+            margin=dict(t=80, b=40, l=40, r=40)
+        )
+        xray_exec_rate_chart_html = fig_xray_exec.to_html(include_plotlyjs=False, div_id='xray-exec-chart', full_html=False)
+        
+        # Method Distribution Pie Chart
+        methods = summary['methods']
+        if methods:
+            fig_xray_method = go.Figure()
+            method_labels = list(methods.keys())
+            method_values = list(methods.values())
+            method_colors = {
+                'Automated': '#17a2b8',
+                'Manual': '#6c757d', 
+                'Automation Candidate': '#fd7e14',
+                'NA': '#dc3545'
+            }
+            colors = [method_colors.get(m, '#999999') for m in method_labels]
+            
+            fig_xray_method.add_trace(go.Pie(
+                labels=method_labels,
+                values=method_values,
+                marker=dict(colors=colors),
+                textinfo='label+value+percent',
+                textfont=dict(size=14),
+                hole=0.4
+            ))
+            fig_xray_method.update_layout(
+                title=f'Rally Test Method Distribution (Xray) - {version}',
+                height=350,
+                margin=dict(t=80, b=40, l=40, r=40)
+            )
+            xray_method_chart_html = fig_xray_method.to_html(include_plotlyjs=False, div_id='xray-method-chart', full_html=False)
+    
+    # Create test method distribution chart
+    fig_test_method = go.Figure()
+    test_method_chart_html = ""
+    if test_method_data['total_tests'] > 0:
+        methods = ['Automated', 'Manual', 'Automation Candidate', 'Not Specified']
+        method_values = [test_method_data['by_method'].get(m, 0) for m in methods]
+        method_colors = ['#4caf50', '#2196f3', '#ff9800', '#9e9e9e']  # Green, Blue, Orange, Gray
+        
+        fig_test_method.add_trace(go.Pie(
+            labels=methods,
+            values=method_values,
+            marker=dict(colors=method_colors),
+            textinfo='label+value+percent',
+            textfont=dict(size=14),
+            hole=0.4
+        ))
+        fig_test_method.update_layout(
+            title=f'Test Method Distribution - {version}',
+            height=400,
+            margin=dict(t=80, b=40, l=40, r=40)
+        )
+        test_method_chart_html = fig_test_method.to_html(include_plotlyjs=False, div_id='test-method-chart', full_html=False)
     
     # Create historical bug trend charts
     fig_historical = go.Figure()
@@ -1106,7 +1698,7 @@ def main():
             <div class="metric-card sub-exec">
                 <div class="metric-label">Sub Test Executions</div>
                 <div class="metric-number">{len(sub_execs)}</div>
-                <div class="metric-detail">Completed: {sub_exec_completed}<br>In Progress: {sub_exec_in_progress} | Not Started: {sub_exec_not_started}</div>
+                <div class="metric-detail">Testing: {sub_exec_xray_data['summary']['testing_coverage']:.0f}% | Auto: {sub_exec_xray_data['summary']['automation_coverage']:.0f}%<br>{sub_exec_xray_data['summary']['total_executed']}/{sub_exec_xray_data['summary']['total_tests']} tests executed</div>
             </div>
         </div>
 
@@ -1167,6 +1759,18 @@ def main():
         {'<div class="alert-box info"><strong>Status:</strong> All test executions completed ✓</div>' if len(sub_execs) > 0 and sub_exec_completed == len(sub_execs) else ''}
         {'<div class="alert-box"><strong>Status:</strong> ' + str(sub_exec_not_started) + ' test executions not started</div>' if sub_exec_not_started > 0 else ''}
         
+        <h3>📊 Xray Execution Metrics</h3>
+        {'<div class="summary-box"><div class="metric-card" style="background: linear-gradient(135deg, #00b894 0%, #00cec9 100%); color: white;"><div class="metric-label">Total Test Runs</div><div class="metric-number">' + str(sub_exec_xray_data["summary"]["total_tests"]) + '</div><div class="metric-detail">Across ' + str(len([e for e in sub_exec_xray_data["executions"] if e["tests"] > 0])) + ' sub test executions</div></div><div class="metric-card" style="background: linear-gradient(135deg, #6c5ce7 0%, #a29bfe 100%); color: white;"><div class="metric-label">Testing Coverage</div><div class="metric-number">' + f'{sub_exec_xray_data["summary"]["testing_coverage"]:.1f}%' + '</div><div class="metric-detail">' + str(sub_exec_xray_data["summary"]["total_executed"]) + ' / ' + str(sub_exec_xray_data["summary"]["total_tests"]) + ' tests have results</div></div><div class="metric-card" style="background: linear-gradient(135deg, #e17055 0%, #fdcb6e 100%); color: white;"><div class="metric-label">Automation Coverage</div><div class="metric-number">' + f'{sub_exec_xray_data["summary"]["automation_coverage"]:.1f}%' + '</div><div class="metric-detail">' + str(sub_exec_xray_data["summary"]["automated_count"]) + ' automated of ' + str(sub_exec_xray_data["summary"]["automated_count"] + sub_exec_xray_data["summary"]["candidate_count"] + sub_exec_xray_data["summary"]["manual_count"]) + ' tests</div></div><div class="metric-card" style="background: linear-gradient(135deg, #00cec9 0%, #81ecec 100%); color: white;"><div class="metric-label">Automation Potential</div><div class="metric-number">' + f'{sub_exec_xray_data["summary"]["automation_potential"]:.1f}%' + '</div><div class="metric-detail">Automated + Candidates</div></div></div>' if sub_exec_xray_data["summary"]["total_tests"] > 0 else '<div class="alert-box info"><strong>Note:</strong> No Xray data available for these Sub Test Executions.</div>'}
+        
+        {'<h4>Rally Test Method Breakdown</h4><table style="max-width: 600px;"><thead><tr><th>Method</th><th>Count</th><th>Rate</th><th>Bar</th></tr></thead><tbody><tr><td><span style="background-color:#17a2b8; color:white; padding:2px 8px; border-radius:4px;">Automated</span></td><td style="text-align:center;">' + str(sub_exec_xray_data["summary"]["automated_count"]) + '</td><td style="text-align:center;">' + f'{sub_exec_xray_data["summary"]["automated_rate"]:.1f}%' + '</td><td><div style="background:#e0e0e0; border-radius:4px; overflow:hidden;"><div style="background:#17a2b8; height:20px; width:' + f'{min(sub_exec_xray_data["summary"]["automated_rate"], 100):.0f}%' + ';"></div></div></td></tr><tr><td><span style="background-color:#fd7e14; color:white; padding:2px 8px; border-radius:4px;">Automation Candidate</span></td><td style="text-align:center;">' + str(sub_exec_xray_data["summary"]["candidate_count"]) + '</td><td style="text-align:center;">' + f'{sub_exec_xray_data["summary"]["candidate_rate"]:.1f}%' + '</td><td><div style="background:#e0e0e0; border-radius:4px; overflow:hidden;"><div style="background:#fd7e14; height:20px; width:' + f'{min(sub_exec_xray_data["summary"]["candidate_rate"], 100):.0f}%' + ';"></div></div></td></tr><tr><td><span style="background-color:#6c757d; color:white; padding:2px 8px; border-radius:4px;">Manual</span></td><td style="text-align:center;">' + str(sub_exec_xray_data["summary"]["manual_count"]) + '</td><td style="text-align:center;">' + f'{sub_exec_xray_data["summary"]["manual_rate"]:.1f}%' + '</td><td><div style="background:#e0e0e0; border-radius:4px; overflow:hidden;"><div style="background:#6c757d; height:20px; width:' + f'{min(sub_exec_xray_data["summary"]["manual_rate"], 100):.0f}%' + ';"></div></div></td></tr><tr><td><span style="background-color:#dc3545; color:white; padding:2px 8px; border-radius:4px;">NA / Not Set</span></td><td style="text-align:center;">' + str(sub_exec_xray_data["summary"]["na_count"]) + '</td><td style="text-align:center;">' + f'{sub_exec_xray_data["summary"]["na_rate"]:.1f}%' + '</td><td><div style="background:#e0e0e0; border-radius:4px; overflow:hidden;"><div style="background:#dc3545; height:20px; width:' + f'{min(sub_exec_xray_data["summary"]["na_rate"], 100):.0f}%' + ';"></div></div></td></tr></tbody></table>' if sub_exec_xray_data["summary"]["total_tests"] > 0 else ''}
+        
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin: 20px 0;">
+            {f'<div class="chart-container">{xray_exec_rate_chart_html}</div>' if xray_exec_rate_chart_html else ''}
+            {f'<div class="chart-container">{xray_method_chart_html}</div>' if xray_method_chart_html else ''}
+        </div>
+        
+        {'<h3>Detailed Execution Data by Sub Test Execution</h3>' + generate_xray_detail_table(sub_exec_xray_data["executions"]) if sub_exec_xray_data["executions"] and any(e["tests"] > 0 for e in sub_exec_xray_data["executions"]) else ''}
+        
         <h3>Sub Test Executions by Team</h3>
         <table>
             <thead>
@@ -1221,6 +1825,15 @@ def main():
             </ul>
         </div>
 
+        <div class="section-title">📊 Test Method Distribution</div>
+        <p><strong>Total Tests:</strong> {test_method_data['total_tests']} | <strong>Data Source:</strong> {test_method_data.get('source', 'unknown').upper()}</p>
+        
+        {test_method_chart_html if test_method_data['total_tests'] > 0 else '<div class="alert-box info"><strong>Note:</strong> No test method data available. Generate test_method_distribution_sub_exec_topics_{version.replace(".", "_")}.csv to enable this section.</div>'}
+        
+        {'<h3>Test Method Breakdown</h3><table><thead><tr><th>Method</th><th>Count</th><th>Percentage</th></tr></thead><tbody>' + ''.join([f"<tr><td><span style='color: {'#4caf50' if m == 'Automated' else '#2196f3' if m == 'Manual' else '#ff9800' if m == 'Automation Candidate' else '#9e9e9e'}; font-weight: bold;'>{m}</span></td><td>{test_method_data['by_method'].get(m, 0)}</td><td>{(test_method_data['by_method'].get(m, 0) / max(test_method_data['total_tests'], 1) * 100):.1f}%</td></tr>" for m in ['Automated', 'Manual', 'Automation Candidate', 'Not Specified']]) + '</tbody></table>' if test_method_data['total_tests'] > 0 else ''}
+        
+        {'<div class="observation-list"><h4>Automation Coverage Analysis</h4><ul><li><strong>Automation Rate:</strong> ' + f"{((test_method_data['by_method'].get('Automated', 0)) / max(test_method_data['total_tests'], 1) * 100):.1f}%" + ' of tests are automated</li><li><strong>Automation Candidates:</strong> ' + f"{test_method_data['by_method'].get('Automation Candidate', 0)}" + ' tests identified for future automation</li><li><strong>Manual Tests:</strong> ' + f"{test_method_data['by_method'].get('Manual', 0)}" + ' tests require manual execution</li></ul></div>' if test_method_data['total_tests'] > 0 else ''}
+
         <div class="footer">
             <p>Generated from Jira Project: DP (DefensePro) | Version: {version}</p>
             <p><strong>Note:</strong> This is a READ-ONLY report. No Jira issues were created or modified during this analysis.</p>
@@ -1242,6 +1855,11 @@ def main():
     print(f"Automation: {automation_data['total_tests']} tests | {automation_data['pass_ratio']:.1f}% pass ratio")
     print(f"Critical Failures: {automation_data.get('critical_failures', 0)} tests failing on all platforms")
     print(f"Sub Test Executions: {sub_exec_completed}/{len(sub_execs)} completed")
+    if test_method_data['total_tests'] > 0:
+        automated = test_method_data['by_method'].get('Automated', 0)
+        manual = test_method_data['by_method'].get('Manual', 0)
+        candidates = test_method_data['by_method'].get('Automation Candidate', 0)
+        print(f"Test Methods: {automated} Automated | {manual} Manual | {candidates} Candidates")
     print("=" * 70)
     
     conn.close()

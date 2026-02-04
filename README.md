@@ -1,14 +1,35 @@
 # DefensePro Release Analysis System
 
-Automated release readiness and gate analysis system for DefensePro releases, integrating PostgreSQL test execution data with Jira bug tracking.
+Automated release readiness and gate analysis system for DefensePro releases, integrating PostgreSQL test execution data with Jira bug tracking, and Xray Cloud API for test management.
 
 ## Overview
 
-This system generates comprehensive release readiness reports and gate analysis for DefensePro releases by analyzing automated test coverage across multiple platforms and tracking bug status through Jira.
+This system generates comprehensive release readiness reports and gate analysis for DefensePro releases by analyzing automated test coverage across multiple platforms, tracking bug status through Jira, and monitoring manual test execution via Xray.
+
+## Jenkins Automation
+
+The system runs automatically via Jenkins every Wednesday at 9:00 AM. See [JENKINS_SETUP.md](JENKINS_SETUP.md) for setup instructions.
 
 ## Main Components
 
-### 1. Release Readiness Report (`generate_release_readiness.py`)
+### 1. Unified Weekly Report (`unified_weekly_report.py`)
+Comprehensive weekly status report combining all metrics:
+- **Bug Status**: Bugs on Dev, QA, and Closed with trend analysis
+- **Automation Test Results**: Pass/Fail metrics from PostgreSQL
+- **Critical Failures**: Tests failing on all platforms
+- **Sub Test Executions**: Status from Jira with Xray integration
+- **Rally Test Method Distribution**: Automated vs Manual test breakdown
+
+**Usage:**
+```powershell
+python unified_weekly_report.py
+# Enter version: 10.13.0.0
+```
+
+**Output:**
+- HTML report: `unified_weekly_report_10_13_0_0.html`
+
+### 2. Release Readiness Report (`generate_release_readiness.py`)
 Comprehensive test coverage analysis with platform-specific metrics:
 - **Overall Coverage Summary**: Total available tests, tests executed, coverage %, pass ratio
 - **Platform Coverage by Run Mode**: Detailed breakdown by platform and mode (Transparent/Routing)
@@ -133,15 +154,24 @@ Each platform has its own available test set calculated from tests executed on t
 
 ```
 Jira/
+├── unified_weekly_report.py       # Main weekly status report (runs from Jenkins)
 ├── generate_release_readiness.py  # Main release readiness report
 ├── generate_gate_analysis.py      # Gate evaluation report
+├── run_gate_analysis.py           # Gate analysis runner
+├── ci_iteration_status.py         # CI iteration status report
 ├── jira_helper.py                 # Jira API helper class
-├── weekly_*.py                    # Weekly tracking scripts
-├── bugs_*.py                      # Bug analysis scripts
+├── weekly_work_summary.py         # Weekly work summary
+├── weekly_high_severity_bug_trend.py  # High severity bug tracking
+├── list_open_bugs.py              # List open bugs utility
+├── get_tests_no_method.py         # Find tests without Rally method
+├── send_bug_notification.py       # Bug notification via email
+├── send_via_outlook.py            # Outlook email sender
+├── test_team_table.py             # Team table generator
 ├── requirements.txt               # Python dependencies
+├── Jenkinsfile                    # Jenkins pipeline definition
+├── JENKINS_SETUP.md               # Jenkins setup instructions
 ├── .env                          # Credentials (not committed)
 ├── .gitignore                    # Git ignore rules
-├── DefensePro_10.12.0.0_Release_Readiness.pptx  # PowerPoint report
 └── README.md                     # This file
 ```
 

@@ -44,7 +44,41 @@ Thumbs.db
 Release_*_Report.html
 Release_*_Gate_Analysis.html
 Release_*.csv
+unified_weekly_report_*.html
+weekly_work_summary_*.csv
+weekly_work_summary_*.html
+ci_iteration_status_*.html
+ci_iteration_status_*.csv
+sub_test_execution_*.html
+open_bugs_report.html
 *.log
 ~$*.pptx
 ~$*.xlsx
 ~$*.docx
+
+# Temporary exploration/debug scripts
+debug_*.py
+query_*.py
+explore_*.py
+analyze_*.py
+investigate_*.py
+search_*.py
+quick_*.py
+find_*.py
+check_*.py
+simple_*.py
+deep_*.py
+
+# Xray exploration scripts and output
+xray_*.py
+xray_*.csv
+xray_*.json
+
+# Other temporary output
+*_output.txt
+*_debug.log
+test_method_distribution_*.csv
+test_method_distribution_*.json
+
+# PowerPoint presentations
+*.pptx
