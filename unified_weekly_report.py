@@ -1004,6 +1004,23 @@ def generate_xray_detail_table(executions):
         else:
             auto_potential_html = '-'
         
+        # Calculate Pass Ratio from statuses
+        statuses = e.get('statuses', {})
+        passed_count = statuses.get('PASSED', 0) + statuses.get('Passed', 0) + statuses.get('PASS', 0)
+        total_executed = e['executed']
+        
+        if total_executed > 0:
+            pass_ratio = (passed_count / total_executed) * 100
+            if pass_ratio >= 90:
+                pass_color = '#4caf50'  # green
+            elif pass_ratio >= 70:
+                pass_color = '#ff9800'  # orange
+            else:
+                pass_color = '#dc3545'  # red
+            pass_ratio_html = f'<span style="color:{pass_color}; font-weight:bold;">{pass_ratio:.0f}%</span>'
+        else:
+            pass_ratio_html = '-'
+        
         rows.append(
             f'<tr>'
             f'<td><a href="https://rwrnd.atlassian.net/browse/{e["key"]}">{e["key"]}</a></td>'
@@ -1012,6 +1029,7 @@ def generate_xray_detail_table(executions):
             f'<td style="text-align:center;">{e["tests"]}</td>'
             f'<td style="text-align:center;">{e["executed"]}</td>'
             f'<td style="text-align:center; color:{rate_color}; font-weight:bold;">{rate:.0f}%</td>'
+            f'<td style="text-align:center;">{pass_ratio_html}</td>'
             f'<td>{methods_html}</td>'
             f'<td style="text-align:center;">{auto_coverage_html}</td>'
             f'<td style="text-align:center;">{auto_potential_html}</td>'
@@ -1024,7 +1042,7 @@ def generate_xray_detail_table(executions):
     table_html = (
         '<table>'
         '<thead><tr><th>Key</th><th>Summary</th><th>Jira Status</th>'
-        '<th>Tests</th><th>Executed</th><th>Exec Rate</th><th>Methods</th>'
+        '<th>Tests</th><th>Executed</th><th>Exec Rate</th><th>Pass Ratio</th><th>Methods</th>'
         '<th>Auto Coverage</th><th>Auto Potential</th></tr></thead>'
         '<tbody>' + ''.join(rows) + '</tbody>'
         '</table>'
