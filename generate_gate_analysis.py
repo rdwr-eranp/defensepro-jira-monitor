@@ -163,7 +163,7 @@ platform_type_mapping AS (
         CASE 
             WHEN platform IN ('UHT', 'MRQP', 'MR2') THEN 'FPGA'
             WHEN platform IN ('ESXI', 'KVM', 'VL3', 'HT2') THEN 'Software'
-            WHEN platform = 'MRQ_X' THEN 'EZchip'
+            WHEN platform IN ('MRQ_X', 'MRQX') THEN 'EZchip'
             ELSE 'Other'
         END as platform_type
     FROM (SELECT DISTINCT platform FROM latest_executions) p

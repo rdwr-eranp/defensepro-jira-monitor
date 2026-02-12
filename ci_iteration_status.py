@@ -437,7 +437,7 @@ def generate_html_report(sprint, sprint_tests, executions, stats, version, build
     platform_type_map = {
         'UHT': 'FPGA', 'MRQP': 'FPGA', 'MR2': 'FPGA',
         'ESXI': 'Software', 'KVM': 'Software', 'VL3': 'Software', 'HT2': 'Software',
-        'MRQ_X': 'EZchip'
+        'MRQ_X': 'EZchip', 'MRQX': 'EZchip'
     }
     
     # Add platform type column

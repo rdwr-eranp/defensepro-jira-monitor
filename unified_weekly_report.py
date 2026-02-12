@@ -610,7 +610,7 @@ def get_automation_data(conn, jira, version, builds, sprint_start, sprint_end):
     platform_type_map = {
         'UHT': 'FPGA', 'MRQP': 'FPGA', 'MR2': 'FPGA',
         'ESXI': 'Software', 'KVM': 'Software', 'VL3': 'Software', 'HT2': 'Software',
-        'MRQ_X': 'EZchip'
+        'MRQ_X': 'EZchip', 'MRQX': 'EZchip'
     }
     executions_df['platform_type'] = executions_df['platform'].map(platform_type_map)
     executions_df['platform_type_mode'] = executions_df['platform_type'] + ' - ' + executions_df['mode']
@@ -631,7 +631,7 @@ def get_automation_data(conn, jira, version, builds, sprint_start, sprint_end):
                CASE 
                    WHEN d.platform IN ('UHT', 'MRQP', 'MR2') THEN 'FPGA'
                    WHEN d.platform IN ('ESXI', 'KVM', 'VL3', 'HT2') THEN 'Software'
-                   WHEN d.platform IN ('MRQ_X') THEN 'EZchip'
+                   WHEN d.platform IN ('MRQ_X', 'MRQX') THEN 'EZchip'
                    ELSE 'Other'
                END as platform_type,
                CASE WHEN p.name LIKE '%-Routing' THEN 'Routing' ELSE 'Transparent' END as mode,
@@ -645,7 +645,7 @@ def get_automation_data(conn, jira, version, builds, sprint_start, sprint_end):
                CASE 
                    WHEN d.platform IN ('UHT', 'MRQP', 'MR2') THEN 'FPGA'
                    WHEN d.platform IN ('ESXI', 'KVM', 'VL3', 'HT2') THEN 'Software'
-                   WHEN d.platform IN ('MRQ_X') THEN 'EZchip'
+                   WHEN d.platform IN ('MRQ_X', 'MRQX') THEN 'EZchip'
                    ELSE 'Other'
                END,
                CASE WHEN p.name LIKE '%-Routing' THEN 'Routing' ELSE 'Transparent' END

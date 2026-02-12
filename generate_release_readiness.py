@@ -401,7 +401,7 @@ available_by_type AS (
         CASE 
             WHEN at.platform IN ('UHT', 'MRQP', 'MR2') THEN 'FPGA'
             WHEN at.platform IN ('ESXI', 'KVM', 'VL3', 'HT2') THEN 'Software'
-            WHEN at.platform = 'MRQ_X' THEN 'EZchip'
+            WHEN at.platform IN ('MRQ_X', 'MRQX') THEN 'EZchip'
             ELSE 'Other'
         END as platform_type,
         at.mode,
@@ -413,7 +413,7 @@ SELECT
     CASE 
         WHEN le.platform IN ('UHT', 'MRQP', 'MR2') THEN 'FPGA'
         WHEN le.platform IN ('ESXI', 'KVM', 'VL3', 'HT2') THEN 'Software'
-        WHEN le.platform = 'MRQ_X' THEN 'EZchip'
+        WHEN le.platform IN ('MRQ_X', 'MRQX') THEN 'EZchip'
         ELSE 'Other'
     END as platform_type,
     le.run_mode as mode,
@@ -429,7 +429,7 @@ JOIN available_by_type abt ON
     CASE 
         WHEN le.platform IN ('UHT', 'MRQP', 'MR2') THEN 'FPGA'
         WHEN le.platform IN ('ESXI', 'KVM', 'VL3', 'HT2') THEN 'Software'
-        WHEN le.platform = 'MRQ_X' THEN 'EZchip'
+        WHEN le.platform IN ('MRQ_X', 'MRQX') THEN 'EZchip'
         ELSE 'Other'
     END = abt.platform_type 
     AND le.run_mode = abt.mode
@@ -438,7 +438,7 @@ GROUP BY
     CASE 
         WHEN le.platform IN ('UHT', 'MRQP', 'MR2') THEN 'FPGA'
         WHEN le.platform IN ('ESXI', 'KVM', 'VL3', 'HT2') THEN 'Software'
-        WHEN le.platform = 'MRQ_X' THEN 'EZchip'
+        WHEN le.platform IN ('MRQ_X', 'MRQX') THEN 'EZchip'
         ELSE 'Other'
     END, 
     le.run_mode, 
@@ -488,7 +488,7 @@ available_by_type AS (
         CASE 
             WHEN at.platform IN ('UHT', 'MRQP', 'MR2') THEN 'FPGA'
             WHEN at.platform IN ('ESXI', 'KVM', 'VL3', 'HT2') THEN 'Software'
-            WHEN at.platform = 'MRQ_X' THEN 'EZchip'
+            WHEN at.platform IN ('MRQ_X', 'MRQX') THEN 'EZchip'
             ELSE 'Other'
         END as platform_type,
         COUNT(DISTINCT at.test_id) as available_tests
@@ -499,7 +499,7 @@ SELECT
     CASE 
         WHEN le.platform IN ('UHT', 'MRQP', 'MR2') THEN 'FPGA'
         WHEN le.platform IN ('ESXI', 'KVM', 'VL3', 'HT2') THEN 'Software'
-        WHEN le.platform = 'MRQ_X' THEN 'EZchip'
+        WHEN le.platform IN ('MRQ_X', 'MRQX') THEN 'EZchip'
         ELSE 'Other'
     END as platform_type,
     COUNT(DISTINCT le.test_id) as tests_executed,
@@ -514,7 +514,7 @@ JOIN available_by_type abt ON
     CASE 
         WHEN le.platform IN ('UHT', 'MRQP', 'MR2') THEN 'FPGA'
         WHEN le.platform IN ('ESXI', 'KVM', 'VL3', 'HT2') THEN 'Software'
-        WHEN le.platform = 'MRQ_X' THEN 'EZchip'
+        WHEN le.platform IN ('MRQ_X', 'MRQX') THEN 'EZchip'
         ELSE 'Other'
     END = abt.platform_type
 WHERE le.rn = 1
@@ -522,7 +522,7 @@ GROUP BY
     CASE 
         WHEN le.platform IN ('UHT', 'MRQP', 'MR2') THEN 'FPGA'
         WHEN le.platform IN ('ESXI', 'KVM', 'VL3', 'HT2') THEN 'Software'
-        WHEN le.platform = 'MRQ_X' THEN 'EZchip'
+        WHEN le.platform IN ('MRQ_X', 'MRQX') THEN 'EZchip'
         ELSE 'Other'
     END,
     abt.available_tests
@@ -907,7 +907,7 @@ print("\nGenerating HTML report...")
 platform_type_map = {
     'ESXI': 'Software', 'VL3': 'Software', 'KVM': 'Software', 'HT2': 'Software',
     'UHT': 'FPGA', 'MR2': 'FPGA', 'MRQP': 'FPGA',
-    'MRQ_X': 'EZchip'
+    'MRQ_X': 'EZchip', 'MRQX': 'EZchip'
 }
 df_platform['type'] = df_platform['platform'].map(platform_type_map)
 df_platform_summary['type'] = df_platform_summary['platform'].map(platform_type_map)
