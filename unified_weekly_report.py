@@ -334,9 +334,9 @@ def get_sub_test_execution_xray_data(jira, sub_execs, version):
         'candidate_rate': (candidate_count / total_with_methods * 100) if total_with_methods > 0 else 0,
         'manual_rate': (manual_count / total_with_methods * 100) if total_with_methods > 0 else 0,
         'na_rate': (na_count / total_with_methods * 100) if total_with_methods > 0 else 0,
-        # Automation metrics
-        'automation_coverage': (automated_count / tests_with_method * 100) if tests_with_method > 0 else 0,
-        'automation_potential': ((automated_count + candidate_count) / tests_with_method * 100) if tests_with_method > 0 else 0,
+        # Automation metrics (coverage = automated / automatable; potential = automatable / total)
+        'automation_coverage': (automated_count / (automated_count + candidate_count) * 100) if (automated_count + candidate_count) > 0 else 0,
+        'automation_potential': ((automated_count + candidate_count) / total_tests * 100) if total_tests > 0 else 0,
         # Legacy field for compatibility
         'execution_rate': (total_executed / total_tests * 100) if total_tests > 0 else 0,
     }
