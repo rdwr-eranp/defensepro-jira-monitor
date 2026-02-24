@@ -74,7 +74,7 @@ pipeline {
                             string(credentialsId: 'jira-email', variable: 'JIRA_EMAIL'),
                             string(credentialsId: 'jira-api-token', variable: 'JIRA_API_TOKEN'),
                             string(credentialsId: 'pg-password', variable: 'PG_PASSWORD'),
-                            string(credentialsId: 'github-token', variable: 'GITHUB_TOKEN')
+                            string(credentialsId: 'dp_qa_copilot', variable: 'GITHUB_TOKEN')
                         ]) {
                             if (isUnix()) {
                                 sh """

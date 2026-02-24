@@ -31,7 +31,7 @@ Add the following credentials in Jenkins (Manage Jenkins → Credentials → Sys
    - **Value:** Your Jira API token (from .env file)
 
 ### GitHub Token (Optional - for AI-powered insights)
-4. **ID:** `github-token`
+4. **ID:** `dp_qa_copilot`
    - **Type:** Secret text
    - **Value:** GitHub Personal Access Token
    - **Purpose:** Enables AI-generated insights in weekly reports via GitHub Models API
