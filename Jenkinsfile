@@ -13,6 +13,9 @@ pipeline {
         // Build range is now auto-detected from database
         // Set BUILDS only if you want to override auto-detection
         // BUILDS = ''
+        
+        // Inject Copilot token into Jenkins agent
+        COPILOT_GITHUB_TOKEN = credentials('dp_qa_copilot')
     }
     
     stages {
@@ -63,21 +66,9 @@ pipeline {
                     echo "Generating unified weekly report for version ${VERSION}"
                     
                     // Credentials can be provided either via:
-                    // 1. Jenkins credentials (jira-url, jira-email, jira-api-token, pg-password, github-token)
+                    // 1. Jenkins credentials (jira-url, jira-email, jira-api-token, pg-password)
                     // 2. .env file in the workspace
-                    
-                    // Try to use Jenkins credentials if available, otherwise fall back to .env
-                    def githubToken = ''
-                    
-                    // Try to load GitHub token from Jenkins credentials (optional)
-                    try {
-                        withCredentials([string(credentialsId: 'dp_qa_copilot', variable: 'GH_TOKEN')]) {
-                            githubToken = "${GH_TOKEN}"
-                            echo "✓ GitHub token loaded from Jenkins credentials"
-                        }
-                    } catch (Exception e) {
-                        echo "ⓘ GitHub token not found in Jenkins, will check .env file"
-                    }
+                    // GitHub token (dp_qa_copilot) is injected via environment block
                     
                     def hasCredentials = true
                     try {
@@ -91,7 +82,7 @@ pipeline {
                                 sh """
                                     . venv/bin/activate
                                     export VERSION=${VERSION}
-                                    ${githubToken ? "export GITHUB_TOKEN='${githubToken}'" : '# No GitHub token from Jenkins'}
+                                    export GITHUB_TOKEN=${COPILOT_GITHUB_TOKEN}
                                     # BUILDS is auto-detected from database
                                     python3 unified_weekly_report.py
                                 """
@@ -99,7 +90,7 @@ pipeline {
                                 bat """
                                     call venv\\Scripts\\activate.bat
                                     set VERSION=${VERSION}
-                                    ${githubToken ? "set GITHUB_TOKEN=${githubToken}" : 'REM No GitHub token from Jenkins'}
+                                    set GITHUB_TOKEN=${COPILOT_GITHUB_TOKEN}
                                     REM BUILDS is auto-detected from database
                                     python unified_weekly_report.py
                                 """
@@ -112,7 +103,7 @@ pipeline {
                                 cd ${WORKSPACE}
                                 . venv/bin/activate
                                 export VERSION=${VERSION}
-                                ${githubToken ? "export GITHUB_TOKEN='${githubToken}'" : '# No GitHub token from Jenkins'}
+                                export GITHUB_TOKEN=${COPILOT_GITHUB_TOKEN}
                                 # BUILDS is auto-detected from database
                                 
                                 # Load environment variables from .env file
@@ -135,7 +126,7 @@ pipeline {
                                 cd %WORKSPACE%
                                 call venv\\Scripts\\activate.bat
                                 set VERSION=${VERSION}
-                                ${githubToken ? "set GITHUB_TOKEN=${githubToken}" : 'REM No GitHub token from Jenkins'}
+                                set GITHUB_TOKEN=${COPILOT_GITHUB_TOKEN}
                                 REM BUILDS is auto-detected from database
                                 
                                 REM Load environment variables from .env file
