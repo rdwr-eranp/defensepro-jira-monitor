@@ -1164,7 +1164,7 @@ Format with <h4> headers and <ul>/<ol> lists. Be concise, technical, and actiona
         print("   🤖 Generating AI insights using GitHub Models...")
         
         response = client.chat.completions.create(
-            model="gpt-4o-mini",  # Cost-effective model
+            model="o3-mini",  # Strong reasoning model
             messages=[
                 {
                     "role": "system",
@@ -1175,9 +1175,7 @@ Format with <h4> headers and <ul>/<ol> lists. Be concise, technical, and actiona
                     "content": context
                 }
             ],
-            temperature=0.7,
-            max_tokens=800,
-            top_p=0.95
+            max_completion_tokens=1000
         )
         
         ai_insights = response.choices[0].message.content.strip()
@@ -1881,7 +1879,7 @@ def main():
         
         {('<div style="background: #fff3cd; border-left: 5px solid #ffc107; padding: 20px; margin: 20px 0; border-radius: 5px;"><h3 style="margin-top: 0; color: #856404;">📊 Rule-Based Insights <span style="font-size: 12px; background: #ffc107; color: #333; padding: 3px 8px; border-radius: 10px; margin-left: 8px;">DETERMINISTIC</span></h3><ul style="line-height: 1.8;">' + ''.join([f"<li>{insight}</li>" for insight in insights]) + '</ul></div>') if insights else ''}
         
-        {('<div style="background: linear-gradient(135deg, #e0f7fa 0%, #e1f5fe 100%); border-left: 5px solid #0288d1; padding: 25px; margin: 20px 0; border-radius: 5px; box-shadow: 0 2px 8px rgba(2, 136, 209, 0.1);"><h3 style="margin-top: 0; color: #01579b;">🤖 AI-Generated Insights <span style="font-size: 12px; background: #0288d1; color: white; padding: 3px 8px; border-radius: 10px; margin-left: 8px;">GPT-4o-MINI</span></h3><div style="line-height: 1.8; color: #263238;">' + ai_insights + '</div></div>') if ai_insights else ''}
+        {('<div style="background: linear-gradient(135deg, #e0f7fa 0%, #e1f5fe 100%); border-left: 5px solid #0288d1; padding: 25px; margin: 20px 0; border-radius: 5px; box-shadow: 0 2px 8px rgba(2, 136, 209, 0.1);"><h3 style="margin-top: 0; color: #01579b;">🤖 AI-Generated Insights <span style="font-size: 12px; background: #0288d1; color: white; padding: 3px 8px; border-radius: 10px; margin-left: 8px;">O3-MINI</span></h3><div style="line-height: 1.8; color: #263238;">' + ai_insights + '</div></div>') if ai_insights else ''}
         
         {platform_html}
         
