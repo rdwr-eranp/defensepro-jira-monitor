@@ -63,15 +63,20 @@ pipeline {
                     echo "Generating unified weekly report for version ${VERSION}"
                     
                     // Try to load GitHub token from Jenkins (optional)
+                    echo "DEBUG: About to attempt loading dp_qa_copilot credential..."
                     def githubToken = ''
+                    def tokenLoaded = false
                     try {
                         withCredentials([string(credentialsId: 'dp_qa_copilot', variable: 'GH_TOKEN')]) {
                             githubToken = GH_TOKEN
-                            echo "DEBUG: GitHub token loaded from dp_qa_copilot (length: ${githubToken.length()})"
+                            tokenLoaded = true
+                            echo "DEBUG: ✓ GitHub token loaded successfully (length: ${githubToken.length()})"
                         }
                     } catch (Exception e) {
-                        echo "DEBUG: Failed to load dp_qa_copilot credential: ${e.message}"
+                        echo "DEBUG: ✗ Failed to load dp_qa_copilot: ${e.getClass().getName()}: ${e.message}"
+                        e.printStackTrace()
                     }
+                    echo "DEBUG: After credential attempt - tokenLoaded=${tokenLoaded}, tokenLength=${githubToken.length()}"
                     
                     // Credentials can be provided either via:
                     // 1. Jenkins credentials (jira-url, jira-email, jira-api-token, pg-password)
