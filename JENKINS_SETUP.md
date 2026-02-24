@@ -30,16 +30,24 @@ Add the following credentials in Jenkins (Manage Jenkins → Credentials → Sys
    - **Type:** Secret text
    - **Value:** Your Jira API token (from .env file)
 
+### GitHub Token (Optional - for AI-powered insights)
+4. **ID:** `github-token`
+   - **Type:** Secret text
+   - **Value:** GitHub Personal Access Token
+   - **Purpose:** Enables AI-generated insights in weekly reports via GitHub Models API
+   - **Get token:** https://github.com/settings/tokens
+   - **Note:** If not provided, reports will use rule-based insights only
+
 ### PostgreSQL Credentials (Optional - for release readiness reports)
-4. **ID:** `postgres-host`
+5. **ID:** `postgres-host`
    - **Type:** Secret text
    - **Value:** `10.185.20.124`
 
-5. **ID:** `postgres-db`
+6. **ID:** `postgres-db`
    - **Type:** Secret text
    - **Value:** `results`
 
-6. **ID:** `postgres-user`
+7. **ID:** `postgres-user`
    - **Type:** Username with password
    - **Username:** `postgres`
    - **Password:** `[password]`

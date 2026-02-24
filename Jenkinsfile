@@ -63,7 +63,7 @@ pipeline {
                     echo "Generating unified weekly report for version ${VERSION}"
                     
                     // Credentials can be provided either via:
-                    // 1. Jenkins credentials (jira-url, jira-email, jira-api-token, pg-password)
+                    // 1. Jenkins credentials (jira-url, jira-email, jira-api-token, pg-password, github-token)
                     // 2. .env file in the workspace
                     
                     // Try to use Jenkins credentials if available, otherwise fall back to .env
@@ -73,20 +73,25 @@ pipeline {
                             string(credentialsId: 'jira-url', variable: 'JIRA_URL'),
                             string(credentialsId: 'jira-email', variable: 'JIRA_EMAIL'),
                             string(credentialsId: 'jira-api-token', variable: 'JIRA_API_TOKEN'),
-                            string(credentialsId: 'pg-password', variable: 'PG_PASSWORD')
+                            string(credentialsId: 'pg-password', variable: 'PG_PASSWORD'),
+                            string(credentialsId: 'github-token', variable: 'GITHUB_TOKEN')
                         ]) {
                             if (isUnix()) {
                                 sh """
                                     . venv/bin/activate
                                     export VERSION=${VERSION}
+                                    export GITHUB_TOKEN=${GITHUB_TOKEN}
                                     # BUILDS is auto-detected from database
+                                    # GITHUB_TOKEN enables AI-powered insights in reports
                                     python3 unified_weekly_report.py
                                 """
                             } else {
                                 bat """
                                     call venv\\Scripts\\activate.bat
                                     set VERSION=${VERSION}
+                                    set GITHUB_TOKEN=${GITHUB_TOKEN}
                                     REM BUILDS is auto-detected from database
+                                    REM GITHUB_TOKEN enables AI-powered insights in reports
                                     python unified_weekly_report.py
                                 """
                             }
@@ -109,6 +114,7 @@ pipeline {
                                 else
                                     echo "ERROR: .env file not found! Please create .env file with credentials."
                                     echo "Required variables: JIRA_URL, JIRA_EMAIL, JIRA_API_TOKEN, PG_PASSWORD"
+                                    echo "Optional: GITHUB_TOKEN (for AI-powered insights)"
                                     exit 1
                                 fi
                                 
@@ -130,6 +136,7 @@ pipeline {
                                 ) else (
                                     echo ERROR: .env file not found! Please create .env file with credentials.
                                     echo Required variables: JIRA_URL, JIRA_EMAIL, JIRA_API_TOKEN, PG_PASSWORD
+                                    echo Optional: GITHUB_TOKEN (for AI-powered insights)
                                     exit /b 1
                                 )
                                 
