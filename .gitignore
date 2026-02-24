@@ -51,6 +51,7 @@ ci_iteration_status_*.html
 ci_iteration_status_*.csv
 sub_test_execution_*.html
 open_bugs_report.html
+auto_potential_below80_*.html
 *.log
 ~$*.pptx
 ~$*.xlsx

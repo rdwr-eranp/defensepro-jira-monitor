@@ -70,12 +70,25 @@ python generate_gate_analysis.py
 - Action items with time estimates for pending gates
 - Test execution rate analysis (~77.5 tests/hour)
 
-### 3. Weekly Bug Tracking Scripts
-- `weekly_bugs_graph.py`: Weekly bug burndown charts
-- `weekly_open_on_qa_graph.py`: QA bugs trend analysis
-- `weekly_qa_bugs_graph.py`: QA-specific bug metrics
-- `bugs_burndown_dev_vs_qa.py`: Dev vs QA bug comparison
-- `weekly_release_bug_trend.py`: Overall release bug trends
+### 3. CI Iteration Status Report (`ci_iteration_status.py`)
+Report for automation test results introduced during the current sprint:
+- **New Tests**: Tests introduced in current sprint
+- **Test Execution Results**: Pass/fail metrics
+- **Coverage by Platform**: Platform and mode breakdown
+- **Build-level Analysis**: Test status per build
+
+**Usage:**
+```powershell
+python ci_iteration_status.py
+# Enter version: 10.13.0.0
+```
+
+### 4. Additional Scripts
+- `weekly_work_summary.py`: Weekly work summary report
+- `weekly_high_severity_bug_trend.py`: High severity bug tracking
+- `list_open_bugs.py`: List open bugs utility
+- `send_bug_notification.py`: Bug notification via email
+- `send_via_outlook.py`: Outlook email sender utility
 
 ## Setup
 
@@ -88,8 +101,8 @@ python generate_gate_analysis.py
 
 1. **Create virtual environment:**
    ```powershell
-   python -m venv venv
-   .\venv\Scripts\Activate.ps1
+   python -m venv .venv
+   .\.venv\Scripts\Activate.ps1
    ```
 
 2. **Install dependencies:**
@@ -163,15 +176,15 @@ Jira/
 ├── weekly_work_summary.py         # Weekly work summary
 ├── weekly_high_severity_bug_trend.py  # High severity bug tracking
 ├── list_open_bugs.py              # List open bugs utility
-├── get_tests_no_method.py         # Find tests without Rally method
 ├── send_bug_notification.py       # Bug notification via email
 ├── send_via_outlook.py            # Outlook email sender
-├── test_team_table.py             # Team table generator
 ├── requirements.txt               # Python dependencies
 ├── Jenkinsfile                    # Jenkins pipeline definition
 ├── JENKINS_SETUP.md               # Jenkins setup instructions
 ├── .env                          # Credentials (not committed)
+├── .env.example                  # Example credentials file
 ├── .gitignore                    # Git ignore rules
+├── push-to-github.ps1            # Git push automation script
 └── README.md                     # This file
 ```
 
