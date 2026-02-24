@@ -13,9 +13,6 @@ pipeline {
         // Build range is now auto-detected from database
         // Set BUILDS only if you want to override auto-detection
         // BUILDS = ''
-        
-        // Inject Copilot token into Jenkins agent
-        COPILOT_GITHUB_TOKEN = credentials('dp_qa_copilot')
     }
     
     stages {
@@ -65,13 +62,21 @@ pipeline {
                     def timestamp = new Date().format('yyyy-MM-dd_HHmm')
                     echo "Generating unified weekly report for version ${VERSION}"
                     
-                    // DEBUG: Check if GitHub token is available
-                    echo "DEBUG: COPILOT_GITHUB_TOKEN is ${env.COPILOT_GITHUB_TOKEN ? 'SET (length: ' + env.COPILOT_GITHUB_TOKEN.length() + ')' : 'NOT SET'}"
+                    // Try to load GitHub token from Jenkins (optional)
+                    def githubToken = ''
+                    try {
+                        withCredentials([string(credentialsId: 'dp_qa_copilot', variable: 'GH_TOKEN')]) {
+                            githubToken = GH_TOKEN
+                            echo "DEBUG: GitHub token loaded from dp_qa_copilot (length: ${githubToken.length()})"
+                        }
+                    } catch (Exception e) {
+                        echo "DEBUG: Failed to load dp_qa_copilot credential: ${e.message}"
+                    }
                     
                     // Credentials can be provided either via:
                     // 1. Jenkins credentials (jira-url, jira-email, jira-api-token, pg-password)
                     // 2. .env file in the workspace
-                    // GitHub token (dp_qa_copilot) is injected via environment block
+                    // GitHub token is loaded separately above
                     
                     def hasCredentials = true
                     try {
@@ -85,7 +90,7 @@ pipeline {
                                 sh """
                                     . venv/bin/activate
                                     export VERSION=${VERSION}
-                                    export GITHUB_TOKEN=${COPILOT_GITHUB_TOKEN}
+                                    export GITHUB_TOKEN='${githubToken}'
                                     
                                     # DEBUG: Check token in shell
                                     if [ -z "\${GITHUB_TOKEN}" ]; then
@@ -101,7 +106,7 @@ pipeline {
                                 bat """
                                     call venv\\Scripts\\activate.bat
                                     set VERSION=${VERSION}
-                                    set GITHUB_TOKEN=${COPILOT_GITHUB_TOKEN}
+                                    set GITHUB_TOKEN=${githubToken}
                                     REM BUILDS is auto-detected from database
                                     python unified_weekly_report.py
                                 """
@@ -109,13 +114,13 @@ pipeline {
                         }
                     } catch (Exception e) {
                         echo "Jenkins credentials not found, loading from .env file instead"
-                        echo "DEBUG: In fallback - COPILOT_GITHUB_TOKEN is ${env.COPILOT_GITHUB_TOKEN ? 'SET (length: ' + env.COPILOT_GITHUB_TOKEN.length() + ')' : 'NOT SET'}"
+                        echo "DEBUG: In fallback - githubToken is ${githubToken ? 'SET (length: ' + githubToken.length() + ')' : 'NOT SET'}"
                         if (isUnix()) {
                             sh """
                                 cd ${WORKSPACE}
                                 . venv/bin/activate
                                 export VERSION=${VERSION}
-                                export GITHUB_TOKEN=${COPILOT_GITHUB_TOKEN}
+                                export GITHUB_TOKEN='${githubToken}'
                                 
                                 # DEBUG: Check token in shell (fallback)
                                 if [ -z "\${GITHUB_TOKEN}" ]; then
@@ -146,7 +151,7 @@ pipeline {
                                 cd %WORKSPACE%
                                 call venv\\Scripts\\activate.bat
                                 set VERSION=${VERSION}
-                                set GITHUB_TOKEN=${COPILOT_GITHUB_TOKEN}
+                                set GITHUB_TOKEN=${githubToken}
                                 REM BUILDS is auto-detected from database
                                 
                                 REM Load environment variables from .env file
