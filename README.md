@@ -19,6 +19,14 @@ Comprehensive weekly status report combining all metrics:
 - **Critical Failures**: Tests failing on all platforms
 - **Sub Test Executions**: Status from Jira with Xray integration
 - **Rally Test Method Distribution**: Automated vs Manual test breakdown
+- **🤖 AI-Generated Insights**: Contextual analysis and recommendations (NEW!)
+
+**Features:**
+- **Dual Insights System**: 
+  - Rule-based insights (deterministic, threshold-based)
+  - AI-generated insights (contextual analysis via GitHub Models API)
+- **Graceful Fallback**: If AI unavailable, continues with rule-based only
+- **Clear Source Labeling**: Each insight type clearly marked in report
 
 **Usage:**
 ```powershell
@@ -117,7 +125,52 @@ python ci_iteration_status.py
      JIRA_URL=https://rwrnd.atlassian.net
      JIRA_EMAIL=your.email@example.com
      JIRA_API_TOKEN=your_api_token
+     GITHUB_TOKEN=your_github_token  # Optional: for AI insights
      ```
+
+4. **Enable AI Insights (Optional):**
+   - Get GitHub Personal Access Token: https://github.com/settings/tokens
+   - Add to `.env`: `GITHUB_TOKEN=github_pat_...`
+   - AI insights will be generated automatically if token is present
+   - Reports work fully without AI (uses rule-based insights only)
+
+## AI-Powered Insights
+
+### Overview
+The system now includes **dual insight generation**:
+
+1. **Rule-Based Insights** (Always Active)
+   - Fast, deterministic analysis
+   - Threshold-based alerts (e.g., coverage < 90%)
+   - Consistent across all runs
+
+2. **AI-Generated Insights** (Optional - GitHub Models API)
+   - Contextual analysis of patterns and trends
+   - Prioritized recommendations with timelines
+   - Platform comparison and root cause suggestions
+   - Powered by GPT-4o-mini via GitHub Models
+
+### Setup AI Insights
+
+**Requirements:**
+- GitHub Personal Access Token with appropriate permissions
+- No additional cost if using GitHub Copilot subscription
+
+**Configuration:**
+```bash
+# Add to .env file
+GITHUB_TOKEN=github_pat_your_token_here
+```
+
+**How It Works:**
+- Automatically analyzes report metrics when token is present
+- Falls back gracefully to rule-based only if API fails
+- Each insight type is clearly labeled in the report
+- Cost-effective: ~$0.001-0.01 per report
+
+**Example Output:**
+- Rule-Based: "⚠️ Coverage at 87.5% is below 90% target"
+- AI-Generated: "The 2.5% gap represents ~200 untested scenarios. Focus expansion on high-risk areas with historically high defect density. Estimated 16 hours to close gap."
 
 ## Database Schema
 

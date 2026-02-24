@@ -1110,6 +1110,86 @@ def generate_insights(platform_type_data, stats, sprint_name):
     
     return insights
 
+
+def generate_ai_insights(stats, bug_data, platform_data, critical_failures, sprint_name):
+    """
+    Generate AI-powered insights using GitHub Models API
+    Falls back gracefully if API fails or token not available
+    """
+    from openai import OpenAI
+    
+    github_token = os.getenv('GITHUB_TOKEN')
+    if not github_token:
+        print("   ⓘ GitHub token not found, skipping AI insights")
+        return None
+    
+    try:
+        # Initialize OpenAI client with GitHub Models endpoint
+        client = OpenAI(
+            base_url="https://models.inference.ai.azure.com",
+            api_key=github_token
+        )
+        
+        # Prepare context for AI
+        context = f"""
+Analyze this DefensePro weekly test report for {sprint_name}:
+
+KEY METRICS:
+- Test Coverage: {stats.get('overall_coverage', 0):.1f}%
+- Pass Ratio: {stats.get('pass_ratio', 0):.1f}%
+- Tests Executed: {stats.get('total_executed', 0):,}
+- Failed Tests: {stats.get('total_failed', 0):,}
+- Bugs in Dev: {bug_data.get('on_dev', 0)}
+- Bugs in QA: {bug_data.get('on_qa', 0)}
+- Critical Failures (all platforms): {len(critical_failures)}
+
+PLATFORM PERFORMANCE:
+"""
+        
+        # Add top 5 platforms
+        for p in platform_data[:5]:
+            context += f"- {p['platform_type_mode']}: {p['coverage']:.1f}% coverage, {p['pass_ratio']:.1f}% pass rate\n"
+        
+        context += """
+
+Provide 4-5 actionable insights as HTML formatted content:
+1. Critical risks requiring immediate attention
+2. Quality trends and patterns
+3. Platform-specific observations
+4. Prioritized recommendations with timelines
+
+Format with <h4> headers and <ul>/<ol> lists. Be concise, technical, and actionable.
+"""
+        
+        print("   🤖 Generating AI insights using GitHub Models...")
+        
+        response = client.chat.completions.create(
+            model="gpt-4o-mini",  # Cost-effective model
+            messages=[
+                {
+                    "role": "system",
+                    "content": "You are a QA automation expert analyzing DefensePro release test reports. Provide technical, actionable insights in HTML format."
+                },
+                {
+                    "role": "user",
+                    "content": context
+                }
+            ],
+            temperature=0.7,
+            max_tokens=800,
+            top_p=0.95
+        )
+        
+        ai_insights = response.choices[0].message.content.strip()
+        print("   ✓ AI insights generated successfully\n")
+        return ai_insights
+        
+    except Exception as e:
+        print(f"   ⚠️ AI insights generation failed: {e}")
+        print("   Continuing with rule-based insights only...\n")
+        return None
+
+
 def get_bug_status_at_date(issue, target_date):
     """Determine bug status category at a specific date by examining changelog"""
     if isinstance(target_date, datetime):
@@ -1681,8 +1761,20 @@ def main():
             priority_html += f'<tr><td><span class="{priority_class}">{priority}</span></td><td>{count}</td><td>{pct:.1f}%</td></tr>'
         priority_html += '</tbody></table>'
     
-    # Generate insights
+    # Generate rule-based insights
     insights = generate_insights(automation_data.get('platform_type_data', []), automation_data, sprint.name) if automation_data['total_tests'] > 0 else []    
+    
+    # Generate AI-powered insights
+    ai_insights = None
+    if automation_data['total_tests'] > 0:
+        ai_insights = generate_ai_insights(
+            automation_data, 
+            {'on_dev': len(bugs_on_dev), 'on_qa': len(bugs_on_qa)},
+            automation_data.get('platform_type_data', []),
+            automation_data.get('critical_failures', []),
+            sprint.name
+        )
+    
     # Build platform type stats HTML - always show table even with no data
     platform_html = ""
     # Always show the table if we have platform_type_data
@@ -1787,7 +1879,9 @@ def main():
         
         {automation_chart_html}
         
-        {('<h3>📊 Automated Insights</h3><ul>' + ''.join([f"<li>{insight}</li>" for insight in insights]) + '</ul>') if insights else ''}
+        {('<div style="background: #fff3cd; border-left: 5px solid #ffc107; padding: 20px; margin: 20px 0; border-radius: 5px;"><h3 style="margin-top: 0; color: #856404;">📊 Rule-Based Insights <span style="font-size: 12px; background: #ffc107; color: #333; padding: 3px 8px; border-radius: 10px; margin-left: 8px;">DETERMINISTIC</span></h3><ul style="line-height: 1.8;">' + ''.join([f"<li>{insight}</li>" for insight in insights]) + '</ul></div>') if insights else ''}
+        
+        {('<div style="background: linear-gradient(135deg, #e0f7fa 0%, #e1f5fe 100%); border-left: 5px solid #0288d1; padding: 25px; margin: 20px 0; border-radius: 5px; box-shadow: 0 2px 8px rgba(2, 136, 209, 0.1);"><h3 style="margin-top: 0; color: #01579b;">🤖 AI-Generated Insights <span style="font-size: 12px; background: #0288d1; color: white; padding: 3px 8px; border-radius: 10px; margin-left: 8px;">GPT-4o-MINI</span></h3><div style="line-height: 1.8; color: #263238;">' + ai_insights + '</div></div>') if ai_insights else ''}
         
         {platform_html}
         
