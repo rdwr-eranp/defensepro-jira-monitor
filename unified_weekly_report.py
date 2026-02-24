@@ -1141,7 +1141,7 @@ KEY METRICS:
 - Failed Tests: {stats.get('total_failed', 0):,}
 - Bugs in Dev: {bug_data.get('on_dev', 0)}
 - Bugs in QA: {bug_data.get('on_qa', 0)}
-- Critical Failures (all platforms): {len(critical_failures)}
+- Critical Failures (all platforms): {critical_failures if isinstance(critical_failures, int) else len(critical_failures)}
 
 PLATFORM PERFORMANCE:
 """
