@@ -24,6 +24,24 @@ pipeline {
             }
         }
         
+        stage('Load GitHub Token') {
+            steps {
+                script {
+                    echo "[STAGE] Loading GitHub token credential..."
+                    try {
+                        withCredentials([string(credentialsId: 'dp_qa_copilot', variable: 'GH_TOKEN')]) {
+                            env.GITHUB_TOKEN = GH_TOKEN
+                            echo "✓ GitHub token loaded from Jenkins credential 'dp_qa_copilot' (length: ${env.GITHUB_TOKEN.length()})"
+                        }
+                    } catch (Exception e) {
+                        echo "⚠ GitHub token not found in Jenkins credentials: ${e.message}"
+                        echo "ℹ AI insights will be skipped unless GITHUB_TOKEN is in .env file"
+                        env.GITHUB_TOKEN = ''
+                    }
+                }
+            }
+        }
+        
         stage('Setup Python Environment') {
             steps {
                 script {
@@ -60,28 +78,13 @@ pipeline {
             steps {
                 script {
                     def timestamp = new Date().format('yyyy-MM-dd_HHmm')
-                    echo "Generating unified weekly report for version ${VERSION}"
-                    
-                    // Try to load GitHub token from Jenkins (optional)
-                    echo "DEBUG: About to attempt loading dp_qa_copilot credential..."
-                    def githubToken = ''
-                    def tokenLoaded = false
-                    try {
-                        withCredentials([string(credentialsId: 'dp_qa_copilot', variable: 'GH_TOKEN')]) {
-                            githubToken = GH_TOKEN
-                            tokenLoaded = true
-                            echo "DEBUG: ✓ GitHub token loaded successfully (length: ${githubToken.length()})"
-                        }
-                    } catch (Exception e) {
-                        echo "DEBUG: ✗ Failed to load dp_qa_copilot: ${e.getClass().getName()}: ${e.message}"
-                        e.printStackTrace()
-                    }
-                    echo "DEBUG: After credential attempt - tokenLoaded=${tokenLoaded}, tokenLength=${githubToken.length()}"
+                    echo "[STAGE] Generating unified weekly report for version ${VERSION}"
+                    echo "GitHub token status: ${env.GITHUB_TOKEN ? 'Available (length: ' + env.GITHUB_TOKEN.length() + ')' : 'Not set - will check .env'}"
                     
                     // Credentials can be provided either via:
                     // 1. Jenkins credentials (jira-url, jira-email, jira-api-token, pg-password)
                     // 2. .env file in the workspace
-                    // GitHub token is loaded separately above
+                    // GitHub token was loaded in previous stage
                     
                     def hasCredentials = true
                     try {
@@ -95,15 +98,7 @@ pipeline {
                                 sh """
                                     . venv/bin/activate
                                     export VERSION=${VERSION}
-                                    export GITHUB_TOKEN='${githubToken}'
-                                    
-                                    # DEBUG: Check token in shell
-                                    if [ -z "\${GITHUB_TOKEN}" ]; then
-                                        echo "DEBUG: GITHUB_TOKEN is EMPTY in shell"
-                                    else
-                                        echo "DEBUG: GITHUB_TOKEN is SET in shell (length: \${#GITHUB_TOKEN})"
-                                    fi
-                                    
+                                    export GITHUB_TOKEN='${env.GITHUB_TOKEN}'
                                     # BUILDS is auto-detected from database
                                     python3 unified_weekly_report.py
                                 """
@@ -111,7 +106,7 @@ pipeline {
                                 bat """
                                     call venv\\Scripts\\activate.bat
                                     set VERSION=${VERSION}
-                                    set GITHUB_TOKEN=${githubToken}
+                                    set GITHUB_TOKEN=${env.GITHUB_TOKEN}
                                     REM BUILDS is auto-detected from database
                                     python unified_weekly_report.py
                                 """
@@ -119,20 +114,13 @@ pipeline {
                         }
                     } catch (Exception e) {
                         echo "Jenkins credentials not found, loading from .env file instead"
-                        echo "DEBUG: In fallback - githubToken is ${githubToken ? 'SET (length: ' + githubToken.length() + ')' : 'NOT SET'}"
+                        echo "GitHub token from pipeline: ${env.GITHUB_TOKEN ? 'Available' : 'Not set - will use .env'}"
                         if (isUnix()) {
                             sh """
                                 cd ${WORKSPACE}
                                 . venv/bin/activate
                                 export VERSION=${VERSION}
-                                export GITHUB_TOKEN='${githubToken}'
-                                
-                                # DEBUG: Check token in shell (fallback)
-                                if [ -z "\${GITHUB_TOKEN}" ]; then
-                                    echo "DEBUG: GITHUB_TOKEN is EMPTY in fallback shell"
-                                else
-                                    echo "DEBUG: GITHUB_TOKEN is SET in fallback shell (length: \${#GITHUB_TOKEN})"
-                                fi
+                                export GITHUB_TOKEN='${env.GITHUB_TOKEN}'
                                 
                                 # BUILDS is auto-detected from database
                                 
@@ -156,7 +144,7 @@ pipeline {
                                 cd %WORKSPACE%
                                 call venv\\Scripts\\activate.bat
                                 set VERSION=${VERSION}
-                                set GITHUB_TOKEN=${githubToken}
+                                set GITHUB_TOKEN=${env.GITHUB_TOKEN}
                                 REM BUILDS is auto-detected from database
                                 
                                 REM Load environment variables from .env file
