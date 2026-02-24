@@ -65,6 +65,9 @@ pipeline {
                     def timestamp = new Date().format('yyyy-MM-dd_HHmm')
                     echo "Generating unified weekly report for version ${VERSION}"
                     
+                    // DEBUG: Check if GitHub token is available
+                    echo "DEBUG: COPILOT_GITHUB_TOKEN is ${env.COPILOT_GITHUB_TOKEN ? 'SET (length: ' + env.COPILOT_GITHUB_TOKEN.length() + ')' : 'NOT SET'}"
+                    
                     // Credentials can be provided either via:
                     // 1. Jenkins credentials (jira-url, jira-email, jira-api-token, pg-password)
                     // 2. .env file in the workspace
@@ -83,6 +86,14 @@ pipeline {
                                     . venv/bin/activate
                                     export VERSION=${VERSION}
                                     export GITHUB_TOKEN=${COPILOT_GITHUB_TOKEN}
+                                    
+                                    # DEBUG: Check token in shell
+                                    if [ -z "\${GITHUB_TOKEN}" ]; then
+                                        echo "DEBUG: GITHUB_TOKEN is EMPTY in shell"
+                                    else
+                                        echo "DEBUG: GITHUB_TOKEN is SET in shell (length: \${#GITHUB_TOKEN})"
+                                    fi
+                                    
                                     # BUILDS is auto-detected from database
                                     python3 unified_weekly_report.py
                                 """
@@ -98,12 +109,21 @@ pipeline {
                         }
                     } catch (Exception e) {
                         echo "Jenkins credentials not found, loading from .env file instead"
+                        echo "DEBUG: In fallback - COPILOT_GITHUB_TOKEN is ${env.COPILOT_GITHUB_TOKEN ? 'SET (length: ' + env.COPILOT_GITHUB_TOKEN.length() + ')' : 'NOT SET'}"
                         if (isUnix()) {
                             sh """
                                 cd ${WORKSPACE}
                                 . venv/bin/activate
                                 export VERSION=${VERSION}
                                 export GITHUB_TOKEN=${COPILOT_GITHUB_TOKEN}
+                                
+                                # DEBUG: Check token in shell (fallback)
+                                if [ -z "\${GITHUB_TOKEN}" ]; then
+                                    echo "DEBUG: GITHUB_TOKEN is EMPTY in fallback shell"
+                                else
+                                    echo "DEBUG: GITHUB_TOKEN is SET in fallback shell (length: \${#GITHUB_TOKEN})"
+                                fi
+                                
                                 # BUILDS is auto-detected from database
                                 
                                 # Load environment variables from .env file
