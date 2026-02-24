@@ -67,31 +67,40 @@ pipeline {
                     // 2. .env file in the workspace
                     
                     // Try to use Jenkins credentials if available, otherwise fall back to .env
+                    def githubToken = ''
+                    
+                    // Try to load GitHub token from Jenkins credentials (optional)
+                    try {
+                        withCredentials([string(credentialsId: 'dp_qa_copilot', variable: 'GH_TOKEN')]) {
+                            githubToken = "${GH_TOKEN}"
+                            echo "✓ GitHub token loaded from Jenkins credentials"
+                        }
+                    } catch (Exception e) {
+                        echo "ⓘ GitHub token not found in Jenkins, will check .env file"
+                    }
+                    
                     def hasCredentials = true
                     try {
                         withCredentials([
                             string(credentialsId: 'jira-url', variable: 'JIRA_URL'),
                             string(credentialsId: 'jira-email', variable: 'JIRA_EMAIL'),
                             string(credentialsId: 'jira-api-token', variable: 'JIRA_API_TOKEN'),
-                            string(credentialsId: 'pg-password', variable: 'PG_PASSWORD'),
-                            string(credentialsId: 'dp_qa_copilot', variable: 'GITHUB_TOKEN')
+                            string(credentialsId: 'pg-password', variable: 'PG_PASSWORD')
                         ]) {
                             if (isUnix()) {
                                 sh """
                                     . venv/bin/activate
                                     export VERSION=${VERSION}
-                                    export GITHUB_TOKEN=${GITHUB_TOKEN}
+                                    ${githubToken ? "export GITHUB_TOKEN='${githubToken}'" : '# No GitHub token from Jenkins'}
                                     # BUILDS is auto-detected from database
-                                    # GITHUB_TOKEN enables AI-powered insights in reports
                                     python3 unified_weekly_report.py
                                 """
                             } else {
                                 bat """
                                     call venv\\Scripts\\activate.bat
                                     set VERSION=${VERSION}
-                                    set GITHUB_TOKEN=${GITHUB_TOKEN}
+                                    ${githubToken ? "set GITHUB_TOKEN=${githubToken}" : 'REM No GitHub token from Jenkins'}
                                     REM BUILDS is auto-detected from database
-                                    REM GITHUB_TOKEN enables AI-powered insights in reports
                                     python unified_weekly_report.py
                                 """
                             }
@@ -103,6 +112,7 @@ pipeline {
                                 cd ${WORKSPACE}
                                 . venv/bin/activate
                                 export VERSION=${VERSION}
+                                ${githubToken ? "export GITHUB_TOKEN='${githubToken}'" : '# No GitHub token from Jenkins'}
                                 # BUILDS is auto-detected from database
                                 
                                 # Load environment variables from .env file
@@ -125,6 +135,7 @@ pipeline {
                                 cd %WORKSPACE%
                                 call venv\\Scripts\\activate.bat
                                 set VERSION=${VERSION}
+                                ${githubToken ? "set GITHUB_TOKEN=${githubToken}" : 'REM No GitHub token from Jenkins'}
                                 REM BUILDS is auto-detected from database
                                 
                                 REM Load environment variables from .env file
