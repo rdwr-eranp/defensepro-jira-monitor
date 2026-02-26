@@ -940,7 +940,17 @@ def calculate_historical_trends(bugs, weeks=8):
         qa_counts.append(qa)
         
         current_date += timedelta(days=7)
-    
+
+    # Ensure the current week (today) is always the last data point
+    today_str = end_date.strftime('%Y-%m-%d')
+    if not dates or dates[-1] != today_str:
+        dev = sum(1 for bug in bugs if datetime.strptime(bug.fields.created[:10], '%Y-%m-%d').date() <= end_date and get_bug_status_at_date(bug, end_date) == 'dev')
+        qa  = sum(1 for bug in bugs if datetime.strptime(bug.fields.created[:10], '%Y-%m-%d').date() <= end_date and get_bug_status_at_date(bug, end_date) == 'qa')
+        dates.append(today_str)
+        total_counts.append(dev + qa)
+        dev_counts.append(dev)
+        qa_counts.append(qa)
+
     # High/Critical priority trend
     high_sev_bugs = [b for b in bugs if hasattr(b.fields, 'priority') and b.fields.priority and b.fields.priority.name in ['High', 'Highest', 'Critical']]
     
@@ -963,7 +973,16 @@ def calculate_historical_trends(bugs, weeks=8):
         high_sev_qa.append(qa)
         
         current_date += timedelta(days=7)
-    
+
+    # Ensure the current week (today) is always the last data point
+    if not high_sev_dates or high_sev_dates[-1] != today_str:
+        dev = sum(1 for bug in high_sev_bugs if datetime.strptime(bug.fields.created[:10], '%Y-%m-%d').date() <= end_date and get_bug_status_at_date(bug, end_date) == 'dev')
+        qa  = sum(1 for bug in high_sev_bugs if datetime.strptime(bug.fields.created[:10], '%Y-%m-%d').date() <= end_date and get_bug_status_at_date(bug, end_date) == 'qa')
+        high_sev_dates.append(today_str)
+        high_sev_total.append(dev + qa)
+        high_sev_dev.append(dev)
+        high_sev_qa.append(qa)
+
     # Priority breakdown
     priority_counts = Counter([b.fields.priority.name if hasattr(b.fields, 'priority') and b.fields.priority else 'None' for b in bugs])
     
