@@ -6,6 +6,14 @@ pipeline {
         // Run every Wednesday at 9:00 AM
         cron('0 9 * * 3')
     }
+
+    parameters {
+        booleanParam(
+            name: 'SEND_QA_BUGS_EMAIL',
+            defaultValue: false,
+            description: 'Send a QA bugs notification email to all bug assignees (disabled by default)'
+        )
+    }
     
     environment {
         // Release version to track
@@ -193,6 +201,73 @@ pipeline {
             }
         }
         
+        stage('QA Bugs Email') {
+            when {
+                expression { return params.SEND_QA_BUGS_EMAIL == true }
+            }
+            steps {
+                script {
+                    echo "[STAGE] Generating QA bugs email..."
+                    try {
+                        withCredentials([
+                            string(credentialsId: 'jira-url',       variable: 'JIRA_URL'),
+                            string(credentialsId: 'jira-email',     variable: 'JIRA_EMAIL'),
+                            string(credentialsId: 'jira-api-token', variable: 'JIRA_API_TOKEN')
+                        ]) {
+                            if (isUnix()) {
+                                sh """
+                                    . venv/bin/activate
+                                    export JIRA_URL=${JIRA_URL}
+                                    export JIRA_EMAIL=${JIRA_EMAIL}
+                                    export JIRA_API_TOKEN=${JIRA_API_TOKEN}
+                                    python3 send_qa_bugs_notification.py --output-html qa_bugs_report.html
+                                """
+                            } else {
+                                bat """
+                                    call venv\\Scripts\\activate.bat
+                                    set JIRA_URL=${JIRA_URL}
+                                    set JIRA_EMAIL=${JIRA_EMAIL}
+                                    set JIRA_API_TOKEN=${JIRA_API_TOKEN}
+                                    python send_qa_bugs_notification.py --output-html qa_bugs_report.html
+                                """
+                            }
+                        }
+                    } catch (Exception e) {
+                        echo "Jenkins credentials not found, loading from .env file"
+                        if (isUnix()) {
+                            sh """
+                                . venv/bin/activate
+                                set -a; . ./.env; set +a
+                                python3 send_qa_bugs_notification.py --output-html qa_bugs_report.html
+                            """
+                        } else {
+                            bat """
+                                call venv\\Scripts\\activate.bat
+                                for /f "usebackq tokens=* delims=" %%a in (".env") do set "%%a"
+                                python send_qa_bugs_notification.py --output-html qa_bugs_report.html
+                            """
+                        }
+                    }
+
+                    // Read recipients and HTML written by Python
+                    def recipients = readFile('qa_bugs_report.html.recipients.txt').trim()
+                    def htmlBody   = readFile('qa_bugs_report.html')
+
+                    if (recipients) {
+                        emailext(
+                            subject: "Action Required: Bugs on QA \u2013 DefensePro ${VERSION}",
+                            body: htmlBody,
+                            mimeType: 'text/html',
+                            to: recipients
+                        )
+                        echo "✓ QA bugs email sent to: ${recipients}"
+                    } else {
+                        echo "ℹ No bug assignees found – email skipped."
+                    }
+                }
+            }
+        }
+
         stage('Email Notification') {
             steps {
                 script {

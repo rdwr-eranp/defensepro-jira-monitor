@@ -305,6 +305,8 @@ Examples:
                         help="Send immediately via Outlook (default: open for review)")
     parser.add_argument("--dry-run", action="store_true",
                         help="Print bug list to console only – do not open Outlook")
+    parser.add_argument("--output-html", metavar="FILE",
+                        help="Write HTML body to FILE and recipients to FILE.recipients.txt, then exit (for Jenkins emailext)")
     parser.add_argument("--to", nargs="+", metavar="EMAIL",
                         help="Override recipient list (space-separated emails)")
     parser.add_argument("--include-runners", action="store_true",
@@ -343,6 +345,26 @@ Examples:
         if priority_counts[p]:
             emoji = PRIORITY_EMOJI.get(p, "⚪")
             print(f"   {emoji} {p}: {priority_counts[p]}")
+
+    # Jenkins / headless mode: write HTML + recipients file, let Jenkins send via emailext
+    if args.output_html:
+        if args.to:
+            recipients = [r.strip() for r in args.to if r.strip()]
+        else:
+            recipients = sorted(set(b["assignee_email"] for b in bugs if b["assignee_email"]))
+
+        html_body = build_html_email(bugs, version_label)
+        recipients_file = args.output_html + ".recipients.txt"
+
+        with open(args.output_html, "w", encoding="utf-8") as f:
+            f.write(html_body)
+        with open(recipients_file, "w", encoding="utf-8") as f:
+            f.write(", ".join(recipients))
+
+        print(f"✅ HTML written to:       {args.output_html}")
+        print(f"✅ Recipients written to:  {recipients_file}")
+        print(f"   To: {', '.join(recipients)}")
+        return
 
     # Dry run: just print the list
     if args.dry_run:
