@@ -835,6 +835,68 @@ def get_bug_status_at_date(issue, target_date):
     else:
         return 'dev'
 
+def get_cross_release_distribution(jira):
+    """
+    Fetch all currently open bugs (Dev + QA) across every active (unreleased,
+    non-archived) DP fix version and return a distribution dict:
+        { version_name: {'High': int, 'Medium': int, 'Low': int} }
+    This gives the full picture for the 'Open Bugs Distribution Across Releases'
+    chart, regardless of which single version the weekly report is generated for.
+    """
+    print("Fetching open bugs across all active releases for distribution chart...")
+    try:
+        # Single query: open bugs on any unreleased version, excluding DP Runners
+        jql = (
+            "project = DP AND issuetype = Bug "
+            "AND status NOT IN (Accepted, Closed, Trash) "
+            "AND fixVersion in unreleasedVersions() "
+            "ORDER BY fixVersion ASC, priority DESC"
+        )
+        all_open_bugs = jira.search_issues(
+            jql, maxResults=False,
+            fields="key,priority,fixVersions,customfield_10129"
+        )
+
+        dist = {}
+        skipped = 0
+        for bug in all_open_bugs:
+            # Skip DP Runners team
+            team = getattr(bug.fields, 'customfield_10129', None)
+            if team:
+                team_name = team.value if hasattr(team, 'value') else str(team)
+                if team_name == 'DP Runners':
+                    skipped += 1
+                    continue
+
+            priority = (
+                bug.fields.priority.name
+                if hasattr(bug.fields, 'priority') and bug.fields.priority
+                else 'None'
+            )
+
+            fix_versions = bug.fields.fixVersions
+            version_names = [v.name for v in fix_versions] if fix_versions else ['Unassigned']
+
+            for ver in version_names:
+                if ver not in dist:
+                    dist[ver] = {'High': 0, 'Medium': 0, 'Low': 0}
+                if priority in ('High', 'Highest', 'Critical', 'Blocker'):
+                    dist[ver]['High'] += 1
+                elif priority == 'Medium':
+                    dist[ver]['Medium'] += 1
+                else:
+                    dist[ver]['Low'] += 1
+
+        total = sum(v['High'] + v['Medium'] + v['Low'] for v in dist.values())
+        print(f"✓ Cross-release distribution: {len(dist)} releases, {total} open bugs"
+              f" (skipped {skipped} DP Runners bugs)")
+        return dist
+
+    except Exception as exc:
+        print(f"⚠️  Could not fetch cross-release distribution: {exc}")
+        return {}
+
+
 def calculate_historical_trends(bugs, weeks=8):
     """Calculate historical bug trends over the specified number of weeks"""
     from datetime import datetime, timedelta
@@ -1362,7 +1424,12 @@ def main():
     # Calculate historical trends
     print("Calculating historical bug trends...")
     historical_trends = calculate_historical_trends(bugs)
-    
+
+    # Override release distribution with cross-release data (all active versions)
+    cross_release_dist = get_cross_release_distribution(jira)
+    if cross_release_dist:
+        historical_trends['release_distribution'] = cross_release_dist
+
     # Debug output
     print(f"\nBug categorization:")
     print(f"  On Dev: {len(bugs_on_dev)}")
