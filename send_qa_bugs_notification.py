@@ -43,6 +43,9 @@ DEFAULT_QA_RECIPIENTS = os.getenv(
     "qa-team@radware.com"
 )
 
+# Always included in every QA bugs email regardless of assignees
+ALWAYS_INCLUDE = [e.strip() for e in os.getenv("QA_BUGS_ALWAYS_INCLUDE", "eranp@radware.com").split(",") if e.strip()]
+
 # Jira statuses that represent "on QA" – adjust to match your workflow
 QA_STATUSES = ["Completed"]
 
@@ -351,7 +354,7 @@ Examples:
         if args.to:
             recipients = [r.strip() for r in args.to if r.strip()]
         else:
-            recipients = sorted(set(b["assignee_email"] for b in bugs if b["assignee_email"]))
+            recipients = sorted(set(b["assignee_email"] for b in bugs if b["assignee_email"]) | set(ALWAYS_INCLUDE))
 
         html_body = build_html_email(bugs, version_label)
         recipients_file = args.output_html + ".recipients.txt"
@@ -380,10 +383,10 @@ Examples:
     if args.to:
         recipients = [r.strip() for r in args.to if r.strip()]
     else:
-        # Send only to assignees of the fetched bugs (skip unassigned)
+        # Send to assignees + always-included addresses
         recipients = sorted(set(
             b["assignee_email"] for b in bugs if b["assignee_email"]
-        ))
+        ) | set(ALWAYS_INCLUDE))
 
     subject = f"Action Required: Bugs on QA – DefensePro {version_label} ({len(bugs)} bugs)"
     html_body = build_html_email(bugs, version_label)
