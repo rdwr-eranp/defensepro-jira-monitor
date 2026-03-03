@@ -1042,11 +1042,15 @@ def generate_xray_detail_table(executions):
         'NA': '#dc3545'
     }
     
+    # Sort by execution rate descending
+    sorted_execs = sorted(
+        [e for e in executions if e['tests'] > 0],
+        key=lambda e: (e['executed'] / e['tests'] * 100) if e['tests'] > 0 else 0,
+        reverse=True
+    )
+
     rows = []
-    for e in executions:
-        if e['tests'] == 0:
-            continue
-        
+    for e in sorted_execs:
         # Calculate rate color
         rate = (e['executed'] / e['tests'] * 100) if e['tests'] > 0 else 0
         if rate == 100:
