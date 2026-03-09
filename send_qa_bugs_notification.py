@@ -84,7 +84,7 @@ def fetch_qa_bugs(jira: JIRA, version: str = None, skip_runners: bool = True):
             f"ORDER BY priority DESC"
         )
 
-    fields = "key,summary,priority,status,assignee,fixVersions,customfield_10129"
+    fields = "key,summary,priority,status,resolution,assignee,fixVersions,customfield_10129"
     issues = jira.search_issues(jql, maxResults=False, fields=fields)
 
     bugs = []
@@ -104,14 +104,21 @@ def fetch_qa_bugs(jira: JIRA, version: str = None, skip_runners: bool = True):
         fix_versions = issue.fields.fixVersions
         fix_version = fix_versions[0].name if fix_versions else "Unassigned"
 
+        # Skip 10.100.0.0 version
+        if fix_version == "10.100.0.0":
+            continue
+
         priority = issue.fields.priority.name if issue.fields.priority else "Medium"
         status = issue.fields.status.name if issue.fields.status else ""
+        resolution_obj = getattr(issue.fields, 'resolution', None)
+        resolution = resolution_obj.name if resolution_obj else "Unresolved"
 
         bugs.append({
             "key": issue.key,
             "summary": issue.fields.summary,
             "priority": priority,
             "status": status,
+            "resolution": resolution,
             "assignee_name": assignee_name,
             "assignee_email": assignee_email,
             "fix_version": fix_version,
@@ -167,6 +174,7 @@ def build_html_email(bugs: list, version_label: str) -> str:
                     <td><a href="{JIRA_URL}/browse/{b['key']}" style="color:#0066cc;">{b['key']}</a></td>
                     <td>{emoji} {b['priority']}</td>
                     <td>{b['status']}</td>
+                    <td>{b.get('resolution', 'Unresolved')}</td>
                     <td>{b['summary']}</td>
                     <td>{b['assignee_name']}</td>
                 </tr>"""
@@ -185,6 +193,7 @@ def build_html_email(bugs: list, version_label: str) -> str:
                 <th style="width:90px;">Bug ID</th>
                 <th style="width:100px;">Priority</th>
                 <th style="width:110px;">Status</th>
+                <th style="width:120px;">Resolution</th>
                 <th>Summary</th>
                 <th style="width:160px;">Assignee</th>
             </tr>
