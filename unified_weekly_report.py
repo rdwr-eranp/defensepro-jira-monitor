@@ -771,6 +771,8 @@ def get_automation_data(conn, jira, version, builds, sprint_start, sprint_end):
         AND created >= "{sprint_start[:10]}" 
         AND created <= "{sprint_end[:10]}"
         AND Origin in ("functional automation", "automation", "Functional Automation", "Automation")
+        AND summary !~ "Web Assist"
+        AND summary !~ "Cloud Assist"
     """
     
     try:
@@ -845,12 +847,14 @@ def get_cross_release_distribution(jira):
     """
     print("Fetching open bugs across all active releases for distribution chart...")
     try:
-        # Single query: open bugs on any unreleased version, excluding DP Runners
+        # Single query: open bugs on any unreleased version, excluding DP Runners + Web Assist + Cloud Assist
         jql = (
             "project = DP AND issuetype = Bug "
             "AND status NOT IN (Accepted, Closed, Trash) "
             "AND fixVersion in unreleasedVersions() "
             'AND fixVersion != "10.100.0.0" '
+            'AND summary !~ "Web Assist" '
+            'AND summary !~ "Cloud Assist" '
             "ORDER BY fixVersion ASC, priority DESC"
         )
         all_open_bugs = jira.search_issues(
@@ -1398,12 +1402,15 @@ def main():
         print(f"   This is a historical version with no active work.\n")
     
     # Get bug data - fetch ALL bugs to get accurate counts for all categories
-    print("Fetching bug data...")
-    # Always fetch all bugs to accurately count Dev, QA, and Closed
-    jql = f'project = DP AND fixVersion = "{version}" AND type = Bug'
+    print("Fetching bug data (excluding Web Assist & Cloud Assist)...")
+    jql = (
+        f'project = DP AND fixVersion = "{version}" AND type = Bug '
+        f'AND summary !~ "Web Assist" '
+        f'AND summary !~ "Cloud Assist"'
+    )
     
     bugs = jira.search_issues(jql, maxResults=False, expand='changelog')
-    print(f"✓ Found {len(bugs)} bugs\n")
+    print(f"✓ Found {len(bugs)} bugs (Web Assist & Cloud Assist excluded)\n")
     
     # Get automation data
     print("Fetching automation data...")
@@ -1465,15 +1472,17 @@ def main():
     if bugs_on_qa:
         print(f"  Sample QA bug status: {bugs_on_qa[0].fields.status.name}")
     
-    # Get sub test executions - filter by state and active release
-    if version_info['is_active']:
-        # For active versions, fetch all sub test executions (to track progress)
-        sub_exec_jql = f'project = DP AND fixVersion = "{version}" AND type = "sub test execution"'
-    else:
-        # For released versions, can skip or fetch all for historical view
-        sub_exec_jql = f'project = DP AND fixVersion = "{version}" AND type = "sub test execution"'
+    # Get sub test executions - Web Assist & Cloud Assist excluded
+    print("Fetching sub test executions (excluding Web Assist & Cloud Assist)...")
+    sub_exec_jql = (
+        f'project = DP AND fixVersion = "{version}" '
+        f'AND type = "sub test execution" '
+        f'AND summary !~ "Web Assist" '
+        f'AND summary !~ "Cloud Assist"'
+    )
     
     sub_execs = jira.search_issues(sub_exec_jql, maxResults=False, fields='summary,status,assignee,customfield_10129')
+    print(f"✓ Found {len(sub_execs)} sub test executions (Web Assist & Cloud Assist excluded)\n")
     
     # Get Xray data for sub test executions (execution rate, automation coverage)
     print("Fetching Xray data for Sub Test Executions...")
