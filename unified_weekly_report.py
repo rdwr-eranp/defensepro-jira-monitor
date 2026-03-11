@@ -434,7 +434,7 @@ def get_test_method_distribution(jira, version):
         # Get Tests that have been associated with this version's test executions
         # Note: Tests don't have fixVersion, so we query all Tests and count by method
         tests = jira.search_issues(
-            'project = DP AND type = Test',
+            'project = DP AND type = Test AND status != Trash',
             maxResults=500,
             fields='summary,status,customfield_10154'
         )
@@ -770,6 +770,7 @@ def get_automation_data(conn, jira, version, builds, sprint_start, sprint_end):
         AND fixVersion = "{version}"
         AND created >= "{sprint_start[:10]}" 
         AND created <= "{sprint_end[:10]}"
+        AND status != Trash
         AND Origin in ("functional automation", "automation", "Functional Automation", "Automation")
         AND summary !~ "Web Assist"
         AND summary !~ "Cloud Assist"
@@ -1405,12 +1406,13 @@ def main():
     print("Fetching bug data (excluding Web Assist & Cloud Assist)...")
     jql = (
         f'project = DP AND fixVersion = "{version}" AND type = Bug '
+        f'AND status != Trash '
         f'AND summary !~ "Web Assist" '
         f'AND summary !~ "Cloud Assist"'
     )
     
     bugs = jira.search_issues(jql, maxResults=False, expand='changelog')
-    print(f"✓ Found {len(bugs)} bugs (Web Assist & Cloud Assist excluded)\n")
+    print(f"✓ Found {len(bugs)} bugs (Web Assist & Cloud Assist & Trash excluded)\n")
     
     # Get automation data
     print("Fetching automation data...")
@@ -1426,6 +1428,10 @@ def main():
         status_name = bug.fields.status.name.lower() if hasattr(bug.fields, 'status') else 'unknown'
         status_category = bug.fields.status.statusCategory.name.lower() if hasattr(bug.fields, 'status') and hasattr(bug.fields.status, 'statusCategory') else 'unknown'
         
+        # Skip trashed bugs (safety net in case JQL filter missed any)
+        if 'trash' in status_name:
+            continue
+
         # Closed/Done status
         if 'done' in status_category or 'complete' in status_category:
             bugs_closed.append(bug)
@@ -1477,12 +1483,13 @@ def main():
     sub_exec_jql = (
         f'project = DP AND fixVersion = "{version}" '
         f'AND type = "sub test execution" '
+        f'AND status != Trash '
         f'AND summary !~ "Web Assist" '
         f'AND summary !~ "Cloud Assist"'
     )
     
     sub_execs = jira.search_issues(sub_exec_jql, maxResults=False, fields='summary,status,assignee,customfield_10129')
-    print(f"✓ Found {len(sub_execs)} sub test executions (Web Assist & Cloud Assist excluded)\n")
+    print(f"✓ Found {len(sub_execs)} sub test executions (Web Assist & Cloud Assist & Trash excluded)\n")
     
     # Get Xray data for sub test executions (execution rate, automation coverage)
     print("Fetching Xray data for Sub Test Executions...")
