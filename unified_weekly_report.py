@@ -142,9 +142,21 @@ def get_sub_test_execution_xray_data(jira, sub_execs, version):
         'summary': {
             'total_tests': 0,
             'total_executed': 0,
+            'total_passed': 0,
+            'pass_ratio': 0,
             'execution_rate': 0,
+            'testing_coverage': 0,
             'methods': {},
-            'automation_coverage': 0
+            'automation_coverage': 0,
+            'automation_potential': 0,
+            'automated_count': 0,
+            'candidate_count': 0,
+            'manual_count': 0,
+            'na_count': 0,
+            'automated_rate': 0,
+            'candidate_rate': 0,
+            'manual_rate': 0,
+            'na_rate': 0
         }
     }
     
