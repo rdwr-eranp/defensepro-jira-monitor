@@ -1,11 +1,16 @@
 """
-Unified Weekly Report for DefensePro
-Combines weekly work summary with CI iteration automation status
+Local Weekly Report for DefensePro
+Same as the unified weekly report but excludes Web Assist and Cloud Assist issues.
+PostgreSQL connection is optional (graceful fallback).
+
+Exclusions applied:
+- All JQL queries filter out issues with "Web Assist" or "Cloud Assist" in the summary
 
 Includes:
 - Bug status tracking (Dev, QA, Accepted)
 - Sub test execution progress with Xray data (execution rate, automation coverage)
 - CI Iteration automation status (test executions, coverage, failures)
+- Test method distribution
 - Historical trends
 """
 
@@ -357,6 +362,122 @@ def get_sub_test_execution_xray_data(jira, sub_execs, version):
     print(f"   ✓ Automation: {automated_count} automated, {candidate_count} candidates, {manual_count} manual")
     
     return {'executions': executions, 'summary': summary}
+
+
+def generate_xray_detail_table(executions):
+    """Generate HTML table for Xray execution details"""
+    if not executions:
+        return ''
+    
+    method_colors = {
+        'Automated': '#17a2b8',
+        'Manual': '#6c757d',
+        'Automation Candidate': '#fd7e14',
+        'NA': '#dc3545'
+    }
+    
+    # Sort by execution rate descending
+    sorted_execs = sorted(
+        [e for e in executions if e['tests'] > 0],
+        key=lambda e: (e['executed'] / e['tests'] * 100) if e['tests'] > 0 else 0,
+        reverse=True
+    )
+    
+    rows = []
+    for e in sorted_execs:
+        
+        # Calculate rate color
+        rate = (e['executed'] / e['tests'] * 100) if e['tests'] > 0 else 0
+        if rate == 100:
+            rate_color = '#4caf50'
+        elif rate > 0:
+            rate_color = '#ff9800'
+        else:
+            rate_color = '#9e9e9e'
+        
+        # Build method badges
+        method_badges = []
+        methods = e.get('methods', {})
+        for m, c in methods.items():
+            color = method_colors.get(m, '#999999')
+            method_badges.append(
+                f'<span style="background-color:{color}; color:white; '
+                f'padding:1px 6px; border-radius:3px; font-size:11px; margin-right:3px;">'
+                f'{m}: {c}</span>'
+            )
+        methods_html = ''.join(method_badges) if method_badges else '-'
+        
+        # Calculate Automation Coverage: automated / (automated + candidates)
+        automated_count = methods.get('Automated', 0)
+        candidate_count = methods.get('Automation Candidate', 0)
+        total_tests = e['tests']
+        potential = automated_count + candidate_count
+        
+        if potential > 0:
+            auto_coverage = (automated_count / potential) * 100
+            auto_coverage_html = f'<span style="color:#17a2b8; font-weight:bold;">{auto_coverage:.0f}%</span>'
+        else:
+            auto_coverage_html = '<span style="color:#999;">N/A</span>'
+        
+        # Calculate Automation Potential: (automated + candidates) / total tests
+        if total_tests > 0:
+            auto_potential = (potential / total_tests) * 100
+            if auto_potential > 50:
+                potential_color = '#17a2b8'  # cyan - good potential
+            elif auto_potential > 0:
+                potential_color = '#fd7e14'  # orange - some potential
+            else:
+                potential_color = '#999'  # gray - no potential
+            auto_potential_html = f'<span style="color:{potential_color}; font-weight:bold;">{auto_potential:.0f}%</span>'
+        else:
+            auto_potential_html = '-'
+        
+        # Calculate Pass Ratio from statuses
+        statuses = e.get('statuses', {})
+        passed_count = statuses.get('PASSED', 0) + statuses.get('Passed', 0) + statuses.get('PASS', 0)
+        total_executed = e['executed']
+        
+        if total_executed > 0:
+            pass_ratio = (passed_count / total_executed) * 100
+            if pass_ratio >= 90:
+                pass_color = '#4caf50'  # green
+            elif pass_ratio >= 70:
+                pass_color = '#ff9800'  # orange
+            else:
+                pass_color = '#dc3545'  # red
+            pass_ratio_html = f'<span style="color:{pass_color}; font-weight:bold;">{pass_ratio:.0f}%</span>'
+        else:
+            pass_ratio_html = '-'
+        
+        rows.append(
+            f'<tr>'
+            f'<td><a href="https://rwrnd.atlassian.net/browse/{e["key"]}">{e["key"]}</a></td>'
+            f'<td>{html.escape(e["summary"])}</td>'
+            f'<td>{html.escape(e["jira_status"])}</td>'
+            f'<td style="text-align:center;">{e["tests"]}</td>'
+            f'<td style="text-align:center;">{e["executed"]}</td>'
+            f'<td style="text-align:center; color:{rate_color}; font-weight:bold;">{rate:.0f}%</td>'
+            f'<td style="text-align:center;">{pass_ratio_html}</td>'
+            f'<td>{methods_html}</td>'
+            f'<td style="text-align:center;">{auto_coverage_html}</td>'
+            f'<td style="text-align:center;">{auto_potential_html}</td>'
+            f'</tr>'
+        )
+    
+    if not rows:
+        return ''
+    
+    table_html = (
+        '<table>'
+        '<thead><tr><th>Key</th><th>Summary</th><th>Jira Status</th>'
+        '<th>Tests</th><th>Executed</th><th>Exec Rate</th><th>Pass Ratio</th><th>Methods</th>'
+        '<th>Auto Coverage</th><th>Auto Potential</th></tr></thead>'
+        '<tbody>' + ''.join(rows) + '</tbody>'
+        '</table>'
+    )
+    
+    return table_html
+
 
 def get_version_info(jira, version_name):
     """Get version information to check if it's released or active"""
@@ -1058,120 +1179,6 @@ def calculate_historical_trends(bugs, weeks=8):
     }
 
 
-def generate_xray_detail_table(executions):
-    """Generate HTML table for Xray execution details"""
-    if not executions:
-        return ''
-    
-    method_colors = {
-        'Automated': '#17a2b8',
-        'Manual': '#6c757d',
-        'Automation Candidate': '#fd7e14',
-        'NA': '#dc3545'
-    }
-    
-    # Sort by execution rate descending
-    sorted_execs = sorted(
-        [e for e in executions if e['tests'] > 0],
-        key=lambda e: (e['executed'] / e['tests'] * 100) if e['tests'] > 0 else 0,
-        reverse=True
-    )
-
-    rows = []
-    for e in sorted_execs:
-        # Calculate rate color
-        rate = (e['executed'] / e['tests'] * 100) if e['tests'] > 0 else 0
-        if rate == 100:
-            rate_color = '#4caf50'
-        elif rate > 0:
-            rate_color = '#ff9800'
-        else:
-            rate_color = '#9e9e9e'
-        
-        # Build method badges
-        method_badges = []
-        methods = e.get('methods', {})
-        for m, c in methods.items():
-            color = method_colors.get(m, '#999999')
-            method_badges.append(
-                f'<span style="background-color:{color}; color:white; '
-                f'padding:1px 6px; border-radius:3px; font-size:11px; margin-right:3px;">'
-                f'{m}: {c}</span>'
-            )
-        methods_html = ''.join(method_badges) if method_badges else '-'
-        
-        # Calculate Automation Coverage: automated / (automated + candidates)
-        automated_count = methods.get('Automated', 0)
-        candidate_count = methods.get('Automation Candidate', 0)
-        total_tests = e['tests']
-        potential = automated_count + candidate_count
-        
-        if potential > 0:
-            auto_coverage = (automated_count / potential) * 100
-            auto_coverage_html = f'<span style="color:#17a2b8; font-weight:bold;">{auto_coverage:.0f}%</span>'
-        else:
-            auto_coverage_html = '<span style="color:#999;">N/A</span>'
-        
-        # Calculate Automation Potential: (automated + candidates) / total tests
-        if total_tests > 0:
-            auto_potential = (potential / total_tests) * 100
-            if auto_potential > 50:
-                potential_color = '#17a2b8'  # cyan - good potential
-            elif auto_potential > 0:
-                potential_color = '#fd7e14'  # orange - some potential
-            else:
-                potential_color = '#999'  # gray - no potential
-            auto_potential_html = f'<span style="color:{potential_color}; font-weight:bold;">{auto_potential:.0f}%</span>'
-        else:
-            auto_potential_html = '-'
-        
-        # Calculate Pass Ratio from statuses
-        statuses = e.get('statuses', {})
-        passed_count = statuses.get('PASSED', 0) + statuses.get('Passed', 0) + statuses.get('PASS', 0)
-        total_executed = e['executed']
-        
-        if total_executed > 0:
-            pass_ratio = (passed_count / total_executed) * 100
-            if pass_ratio >= 90:
-                pass_color = '#4caf50'  # green
-            elif pass_ratio >= 70:
-                pass_color = '#ff9800'  # orange
-            else:
-                pass_color = '#dc3545'  # red
-            pass_ratio_html = f'<span style="color:{pass_color}; font-weight:bold;">{pass_ratio:.0f}%</span>'
-        else:
-            pass_ratio_html = '-'
-        
-        rows.append(
-            f'<tr>'
-            f'<td><a href="https://rwrnd.atlassian.net/browse/{e["key"]}">{e["key"]}</a></td>'
-            f'<td>{html.escape(e["summary"])}</td>'
-            f'<td>{html.escape(e["jira_status"])}</td>'
-            f'<td style="text-align:center;">{e["tests"]}</td>'
-            f'<td style="text-align:center;">{e["executed"]}</td>'
-            f'<td style="text-align:center; color:{rate_color}; font-weight:bold;">{rate:.0f}%</td>'
-            f'<td style="text-align:center;">{pass_ratio_html}</td>'
-            f'<td>{methods_html}</td>'
-            f'<td style="text-align:center;">{auto_coverage_html}</td>'
-            f'<td style="text-align:center;">{auto_potential_html}</td>'
-            f'</tr>'
-        )
-    
-    if not rows:
-        return ''
-    
-    table_html = (
-        '<table>'
-        '<thead><tr><th>Key</th><th>Summary</th><th>Jira Status</th>'
-        '<th>Tests</th><th>Executed</th><th>Exec Rate</th><th>Pass Ratio</th><th>Methods</th>'
-        '<th>Auto Coverage</th><th>Auto Potential</th></tr></thead>'
-        '<tbody>' + ''.join(rows) + '</tbody>'
-        '</table>'
-    )
-    
-    return table_html
-
-
 def generate_insights(platform_type_data, stats, sprint_name):
     """Generate automated insights from platform type data"""
     insights = []
@@ -1247,6 +1254,8 @@ def generate_ai_insights(stats, bug_data, platform_data, critical_failures, spri
         context = f"""
 Analyze this DefensePro weekly test report for {sprint_name}:
 
+NOTE: Web Assist and Cloud Assist issues are EXCLUDED from all counts in this report.
+
 KEY METRICS:
 - Test Coverage: {stats.get('overall_coverage', 0):.1f}%
 - Pass Ratio: {stats.get('pass_ratio', 0):.1f}%
@@ -1301,40 +1310,6 @@ Format with <h4> headers and <ul>/<ol> lists. Be concise, technical, and actiona
         return None
 
 
-def get_bug_status_at_date(issue, target_date):
-    """Determine bug status category at a specific date by examining changelog"""
-    if isinstance(target_date, datetime):
-        target_date = target_date.date()
-    
-    created_date = datetime.strptime(issue.fields.created[:10], '%Y-%m-%d').date()
-    if created_date > target_date:
-        return 'not_created'
-    
-    status_at_date = 'None'
-    changelog = issue.changelog
-    if hasattr(changelog, 'histories'):
-        sorted_histories = sorted(changelog.histories, key=lambda h: h.created)
-        
-        for history in sorted_histories:
-            change_date = datetime.strptime(history.created[:19], '%Y-%m-%dT%H:%M:%S').date()
-            if change_date > target_date:
-                break
-            
-            for item in history.items:
-                if item.field == 'status':
-                    status_at_date = item.toString
-    
-    status_lower = status_at_date.lower()
-    if 'accepted' in status_lower:
-        return 'closed'
-    elif 'completed' in status_lower:
-        return 'qa'
-    elif any(s in status_lower for s in ['in progress', 'to do', 'to-do', 'none', 'open']):
-        return 'dev'
-    else:
-        return 'dev'
-
-
 def get_bugs_closed_during_period(bugs, start_date, end_date):
     """
     Find bugs that transitioned to closed/accepted status during the specified period.
@@ -1387,28 +1362,37 @@ def main():
         version = input("Enter version (e.g., 10.12.0.0): ").strip()
     
     print(f"\n{'='*70}")
-    print(f"UNIFIED WEEKLY REPORT - DefensePro {version}")
+    print(f"LOCAL WEEKLY REPORT - DefensePro {version}")
+    print(f"  (Web Assist & Cloud Assist EXCLUDED)")
     print(f"{'='*70}\n")
     
-    # Connect to Jira and PostgreSQL
+    # Connect to Jira and PostgreSQL (PG is optional)
     print("Connecting to systems...")
     jira = connect_to_jira()
-    conn = connect_to_postgres()
-    print("✓ Connected\n")
+    print("✓ Connected to Jira")
+
+    conn = None
+    try:
+        conn = connect_to_postgres()
+        print("✓ Connected to PostgreSQL\n")
+    except Exception as e:
+        print(f"⚠️  PostgreSQL unavailable ({e}). Automation data will be skipped.\n")
     
     # Get sprint info
     sprint = get_current_sprint(jira)
     sprint_start = sprint.startDate
     sprint_end = sprint.endDate
     
-    # Auto-detect builds from database (always)
-    print("Auto-detecting builds from database...")
-    builds = get_builds_for_version(conn, version, sprint_start, sprint_end)
-    if builds:
-        print(f"✓ Auto-detected builds: {builds}")
-    else:
-        print("⚠️  No builds found for this version in sprint period")
-        builds = ''  # Will result in 0 test executions
+    # Auto-detect builds from database
+    builds = ''
+    if conn:
+        print("Auto-detecting builds from database...")
+        builds = get_builds_for_version(conn, version, sprint_start, sprint_end)
+        if builds:
+            print(f"✓ Auto-detected builds: {builds}")
+        else:
+            print("⚠️  No builds found for this version in sprint period")
+            builds = ''
     print(f"Sprint: {sprint.name}")
     print(f"Period: {sprint_start[:10]} to {sprint_end[:10]}\n")
     
@@ -1424,7 +1408,7 @@ def main():
         print(f"⚠️  WARNING: Version {version} is ARCHIVED in Jira")
         print(f"   This is a historical version with no active work.\n")
     
-    # Get bug data - fetch ALL bugs to get accurate counts for all categories
+    # Get bug data — Web Assist + Cloud Assist EXCLUDED from JQL
     print("Fetching bug data (excluding Web Assist & Cloud Assist)...")
     jql = (
         f'project = DP AND fixVersion = "{version}" AND type = Bug '
@@ -1432,14 +1416,24 @@ def main():
         f'AND summary !~ "Web Assist" '
         f'AND summary !~ "Cloud Assist"'
     )
-    
     bugs = jira.search_issues(jql, maxResults=False, expand='changelog')
     print(f"✓ Found {len(bugs)} bugs (Web Assist & Cloud Assist & Trash excluded)\n")
     
     # Get automation data
-    print("Fetching automation data...")
-    automation_data = get_automation_data(conn, jira, version, builds, sprint_start, sprint_end)
-    print(f"✓ Found {automation_data['total_tests']} tests with {automation_data['total_executions']} executions\n")
+    empty_automation = {
+        'total_tests': 0, 'total_executions': 0,
+        'passed': 0, 'failed': 0, 'pass_ratio': 0, 'overall_coverage': 0,
+        'platform_data': [], 'platform_type_data': [],
+        'critical_failures': 0, 'failed_tests': [],
+        'automation_bugs': [], 'automation_bugs_count': 0
+    }
+    if conn and builds:
+        print("Fetching automation data...")
+        automation_data = get_automation_data(conn, jira, version, builds, sprint_start, sprint_end)
+        print(f"✓ Found {automation_data['total_tests']} tests with {automation_data['total_executions']} executions\n")
+    else:
+        print("⚠️  Skipping automation data (no DB connection or no builds)\n")
+        automation_data = empty_automation
     
     # Categorize bugs based on status category and name
     bugs_on_dev = []
@@ -1500,7 +1494,7 @@ def main():
     if bugs_on_qa:
         print(f"  Sample QA bug status: {bugs_on_qa[0].fields.status.name}")
     
-    # Get sub test executions - Web Assist & Cloud Assist excluded
+    # Get sub test executions — Web Assist + Cloud Assist EXCLUDED
     print("Fetching sub test executions (excluding Web Assist & Cloud Assist)...")
     sub_exec_jql = (
         f'project = DP AND fixVersion = "{version}" '
@@ -1509,7 +1503,6 @@ def main():
         f'AND summary !~ "Web Assist" '
         f'AND summary !~ "Cloud Assist"'
     )
-    
     sub_execs = jira.search_issues(sub_exec_jql, maxResults=False, fields='summary,status,assignee,customfield_10129')
     print(f"✓ Found {len(sub_execs)} sub test executions (Web Assist & Cloud Assist & Trash excluded)\n")
     
@@ -1524,9 +1517,21 @@ def main():
             'summary': {
                 'total_tests': 0,
                 'total_executed': 0,
+                'total_passed': 0,
+                'pass_ratio': 0,
                 'execution_rate': 0,
+                'testing_coverage': 0,
                 'methods': {},
-                'automation_coverage': 0
+                'automation_coverage': 0,
+                'automation_potential': 0,
+                'automated_count': 0,
+                'candidate_count': 0,
+                'manual_count': 0,
+                'na_count': 0,
+                'automated_rate': 0,
+                'candidate_rate': 0,
+                'manual_rate': 0,
+                'na_rate': 0
             }
         }
     
@@ -1543,6 +1548,22 @@ def main():
     sub_exec_completed = sum(1 for se in sub_execs if hasattr(se.fields, 'status') and is_completed_status(se.fields.status.name))
     sub_exec_in_progress = sum(1 for se in sub_execs if hasattr(se.fields, 'status') and 'in progress' in se.fields.status.name.lower())
     sub_exec_not_started = len(sub_execs) - sub_exec_completed - sub_exec_in_progress
+
+    # Compute test case coverage metrics (Jira-based, replaces Xray metrics)
+    tc_total = test_method_data['total_tests']
+    tc_automated = test_method_data['by_method'].get('Automated', 0)
+    tc_manual = test_method_data['by_method'].get('Manual', 0)
+    tc_candidates = test_method_data['by_method'].get('Automation Candidate', 0)
+    tc_not_specified = test_method_data['by_method'].get('Not Specified', 0)
+    tc_automatable = tc_automated + tc_candidates
+    tc_automation_coverage = (tc_automated / tc_automatable * 100) if tc_automatable > 0 else 0
+    tc_automation_potential = (tc_automatable / tc_total * 100) if tc_total > 0 else 0
+    tc_automated_rate = (tc_automated / tc_total * 100) if tc_total > 0 else 0
+    tc_manual_rate = (tc_manual / tc_total * 100) if tc_total > 0 else 0
+    tc_candidate_rate = (tc_candidates / tc_total * 100) if tc_total > 0 else 0
+    tc_na_rate = (tc_not_specified / tc_total * 100) if tc_total > 0 else 0
+    # Testing coverage from Xray (same calculation as unified report)
+    tc_testing_coverage = sub_exec_xray_data['summary']['testing_coverage']
     
     # Helper function to extract team name safely
     def get_team_name(issue):
@@ -1571,7 +1592,7 @@ def main():
         team_stats[team]['total'] += 1
     
     # Generate HTML report
-    output_file = f"unified_weekly_report_{version.replace('.', '_')}.html"
+    output_file = f"local_weekly_report_{version.replace('.', '_')}.html"
     
     # Create automation charts by platform type + mode
     fig_automation = make_subplots(
@@ -1733,6 +1754,7 @@ def main():
                 margin=dict(t=80, b=40, l=40, r=40)
             )
             xray_method_chart_html = fig_xray_method.to_html(include_plotlyjs=False, div_id='xray-method-chart', full_html=False)
+
     
     # Create test method distribution chart
     fig_test_method = go.Figure()
@@ -1935,7 +1957,7 @@ def main():
 <html>
 <head>
     <meta charset="UTF-8">
-    <title>Unified Weekly Report - DefensePro {version}</title>
+    <title>Local Weekly Report - DefensePro {version}</title>
     <style>
         body {{ font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; margin: 0; padding: 20px; background-color: #f5f5f5; }}
         .container {{ max-width: 1400px; margin: 0 auto; background-color: white; padding: 30px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }}
@@ -1968,7 +1990,7 @@ def main():
 </head>
 <body>
     <div class="container">
-        <h1>Unified Weekly Report - DefensePro {version}</h1>
+        <h1>Local Weekly Report - DefensePro {version}</h1>
         <div class="metadata">
             <strong>Sprint:</strong> {sprint.name}<br>
             <strong>Period:</strong> {sprint_start[:10]} to {sprint_end[:10]}<br>
@@ -1977,6 +1999,11 @@ def main():
         </div>
 
         {version_warning_html}
+
+        <div class="alert-box info" style="background: linear-gradient(135deg, #e8f5e9, #e3f2fd); border-left: 5px solid #43a047;">
+            <strong>📋 Local Report:</strong> This report <u>excludes Web Assist & Cloud Assist</u> testing data.
+            All bug and sub-test-execution counts have <code>summary !~ "Web Assist"</code> and <code>summary !~ "Cloud Assist"</code> applied.
+        </div>
 
         <div class="summary-box">
             <div class="metric-card bugs">
@@ -2055,7 +2082,7 @@ def main():
         {'<div class="alert-box info"><strong>Status:</strong> All test executions completed ✓</div>' if len(sub_execs) > 0 and sub_exec_completed == len(sub_execs) else ''}
         {'<div class="alert-box"><strong>Status:</strong> ' + str(sub_exec_not_started) + ' test executions not started</div>' if sub_exec_not_started > 0 else ''}
         
-        <h3>📊 Xray Execution Metrics</h3>
+        <h3>📊 Test Case Coverage Metrics</h3>
         {'<div class="summary-box"><div class="metric-card" style="background: linear-gradient(135deg, #00b894 0%, #00cec9 100%); color: white;"><div class="metric-label">Total Test Runs</div><div class="metric-number">' + str(sub_exec_xray_data["summary"]["total_tests"]) + '</div><div class="metric-detail">Across ' + str(len([e for e in sub_exec_xray_data["executions"] if e["tests"] > 0])) + ' sub test executions</div></div><div class="metric-card" style="background: linear-gradient(135deg, #6c5ce7 0%, #a29bfe 100%); color: white;"><div class="metric-label">Testing Coverage</div><div class="metric-number">' + f'{sub_exec_xray_data["summary"]["testing_coverage"]:.1f}%' + '</div><div class="metric-detail">' + str(sub_exec_xray_data["summary"]["total_executed"]) + ' / ' + str(sub_exec_xray_data["summary"]["total_tests"]) + ' tests have results</div></div><div class="metric-card" style="background: linear-gradient(135deg, ' + ('#27ae60 0%, #2ecc71' if sub_exec_xray_data["summary"]["pass_ratio"] >= 90 else '#f39c12 0%, #f1c40f' if sub_exec_xray_data["summary"]["pass_ratio"] >= 70 else '#e74c3c 0%, #c0392b') + ' 100%); color: white;"><div class="metric-label">Pass Ratio</div><div class="metric-number">' + f'{sub_exec_xray_data["summary"]["pass_ratio"]:.1f}%' + '</div><div class="metric-detail">' + str(sub_exec_xray_data["summary"]["total_passed"]) + ' / ' + str(sub_exec_xray_data["summary"]["total_executed"]) + ' tests passed</div></div><div class="metric-card" style="background: linear-gradient(135deg, #e17055 0%, #fdcb6e 100%); color: white;"><div class="metric-label">Automation Coverage</div><div class="metric-number">' + f'{sub_exec_xray_data["summary"]["automation_coverage"]:.1f}%' + '</div><div class="metric-detail">' + str(sub_exec_xray_data["summary"]["automated_count"]) + ' automated of ' + str(sub_exec_xray_data["summary"]["automated_count"] + sub_exec_xray_data["summary"]["candidate_count"] + sub_exec_xray_data["summary"]["manual_count"]) + ' tests</div></div><div class="metric-card" style="background: linear-gradient(135deg, #00cec9 0%, #81ecec 100%); color: white;"><div class="metric-label">Automation Potential</div><div class="metric-number">' + f'{sub_exec_xray_data["summary"]["automation_potential"]:.1f}%' + '</div><div class="metric-detail">Automated + Candidates</div></div></div>' if sub_exec_xray_data["summary"]["total_tests"] > 0 else '<div class="alert-box info"><strong>Note:</strong> No Xray data available for these Sub Test Executions.</div>'}
         
         {'<h4>Rally Test Method Breakdown</h4><table style="max-width: 600px;"><thead><tr><th>Method</th><th>Count</th><th>Rate</th><th>Bar</th></tr></thead><tbody><tr><td><span style="background-color:#17a2b8; color:white; padding:2px 8px; border-radius:4px;">Automated</span></td><td style="text-align:center;">' + str(sub_exec_xray_data["summary"]["automated_count"]) + '</td><td style="text-align:center;">' + f'{sub_exec_xray_data["summary"]["automated_rate"]:.1f}%' + '</td><td><div style="background:#e0e0e0; border-radius:4px; overflow:hidden;"><div style="background:#17a2b8; height:20px; width:' + f'{min(sub_exec_xray_data["summary"]["automated_rate"], 100):.0f}%' + ';"></div></div></td></tr><tr><td><span style="background-color:#fd7e14; color:white; padding:2px 8px; border-radius:4px;">Automation Candidate</span></td><td style="text-align:center;">' + str(sub_exec_xray_data["summary"]["candidate_count"]) + '</td><td style="text-align:center;">' + f'{sub_exec_xray_data["summary"]["candidate_rate"]:.1f}%' + '</td><td><div style="background:#e0e0e0; border-radius:4px; overflow:hidden;"><div style="background:#fd7e14; height:20px; width:' + f'{min(sub_exec_xray_data["summary"]["candidate_rate"], 100):.0f}%' + ';"></div></div></td></tr><tr><td><span style="background-color:#6c757d; color:white; padding:2px 8px; border-radius:4px;">Manual</span></td><td style="text-align:center;">' + str(sub_exec_xray_data["summary"]["manual_count"]) + '</td><td style="text-align:center;">' + f'{sub_exec_xray_data["summary"]["manual_rate"]:.1f}%' + '</td><td><div style="background:#e0e0e0; border-radius:4px; overflow:hidden;"><div style="background:#6c757d; height:20px; width:' + f'{min(sub_exec_xray_data["summary"]["manual_rate"], 100):.0f}%' + ';"></div></div></td></tr><tr><td><span style="background-color:#dc3545; color:white; padding:2px 8px; border-radius:4px;">NA / Not Set</span></td><td style="text-align:center;">' + str(sub_exec_xray_data["summary"]["na_count"]) + '</td><td style="text-align:center;">' + f'{sub_exec_xray_data["summary"]["na_rate"]:.1f}%' + '</td><td><div style="background:#e0e0e0; border-radius:4px; overflow:hidden;"><div style="background:#dc3545; height:20px; width:' + f'{min(sub_exec_xray_data["summary"]["na_rate"], 100):.0f}%' + ';"></div></div></td></tr></tbody></table>' if sub_exec_xray_data["summary"]["total_tests"] > 0 else ''}
@@ -2133,6 +2160,7 @@ def main():
         <div class="footer">
             <p>Generated from Jira Project: DP (DefensePro) | Version: {version}</p>
             <p><strong>Note:</strong> This is a READ-ONLY report. No Jira issues were created or modified during this analysis.</p>
+            <p><em>Web Assist & Cloud Assist data excluded. PostgreSQL automation data is optional.</em></p>
         </div>
     </div>
 </body>
@@ -2158,7 +2186,8 @@ def main():
         print(f"Test Methods: {automated} Automated | {manual} Manual | {candidates} Candidates")
     print("=" * 70)
     
-    conn.close()
+    if conn:
+        conn.close()
 
 if __name__ == "__main__":
     main()
