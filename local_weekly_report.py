@@ -658,10 +658,18 @@ def get_builds_for_version(conn, version, sprint_start, sprint_end):
     builds = df['build'].tolist()
     return ','.join([str(b) for b in builds])
 
+def get_previous_version(version):
+    """Derive the previous release version by decrementing the minor number (e.g., 10.13.0.0 → 10.12.0.0)"""
+    parts = version.split('.')
+    parts[1] = str(int(parts[1]) - 1)
+    return '.'.join(parts)
+
+
 def get_automation_data(conn, jira, version, builds, sprint_start, sprint_end):
     """Get automation test data for the sprint period"""
     # builds are integers in the database, don't quote them
     builds_str = ','.join([b.strip() for b in builds.split(',')])
+    prev_version = get_previous_version(version)
     
     # Get tests executed in sprint
     tests_query = f"""
@@ -688,7 +696,10 @@ def get_automation_data(conn, jira, version, builds, sprint_start, sprint_end):
             'executions': 0,
             'passed': 0,
             'failed': 0,
-            'pass_ratio': 0
+            'pass_ratio': 0,
+            'new_tests': 0,
+            'new_tests_passed': 0,
+            'new_tests_failed': 0
         } for combo in all_combinations]
         
         return {
@@ -698,6 +709,8 @@ def get_automation_data(conn, jira, version, builds, sprint_start, sprint_end):
             'failed': 0,
             'pass_ratio': 0,
             'overall_coverage': 0,
+            'new_tests_total': 0,
+            'prev_version': prev_version,
             'platform_data': [],
             'platform_type_data': empty_platform_type_data,
             'critical_failures': 0,
@@ -758,6 +771,21 @@ def get_automation_data(conn, jira, version, builds, sprint_start, sprint_end):
         .drop_duplicates(subset=['test_id', 'platform_type', 'mode'])
     )
 
+    # Identify new tests: test_ids that did NOT exist in the previous release
+    baseline_ids_query = f"""
+        SELECT DISTINCT te.test_id
+        FROM test_execution te
+        WHERE te.version = '{prev_version}'
+          AND te.mode = 'regression'
+    """
+    baseline_ids_df = pd.read_sql(baseline_ids_query, conn)
+    baseline_test_ids = set(baseline_ids_df['test_id'].tolist())
+
+    # Split deduplicated results into legacy tests (in baseline) and new tests (not in baseline)
+    pt_dedup_df['is_new_test'] = ~pt_dedup_df['test_id'].isin(baseline_test_ids)
+    legacy_pt_dedup_df = pt_dedup_df[~pt_dedup_df['is_new_test']]
+    new_pt_dedup_df = pt_dedup_df[pt_dedup_df['is_new_test']]
+
     # Calculate statistics
     stats = {
         'total_tests': len(test_ids),
@@ -767,7 +795,7 @@ def get_automation_data(conn, jira, version, builds, sprint_start, sprint_end):
         'pass_ratio': len(executions_df[executions_df['status_lower'] == 'passed']) / max(len(executions_df), 1) * 100
     }
     
-    # Get available tests for coverage calculation (from 10.12.0.0 and 10.11.0.0)
+    # Get available tests for coverage calculation (from previous release only)
     # Count unique test cases per platform_type and mode (not per platform)
     available_tests_query = f"""
         SELECT 
@@ -782,7 +810,7 @@ def get_automation_data(conn, jira, version, builds, sprint_start, sprint_end):
         FROM test_execution te
         JOIN device d ON te.device_id = d.id
         JOIN profile p ON te.profile_id = p.id
-        WHERE te.version IN ('10.12.0.0', '10.11.0.0')
+        WHERE te.version = '{prev_version}'
           AND te.mode = 'regression'
         GROUP BY 
                CASE 
@@ -804,22 +832,33 @@ def get_automation_data(conn, jira, version, builds, sprint_start, sprint_end):
     
     platform_type_stats = []
     for pt_mode in all_combinations:
-        if len(pt_dedup_df) > 0 and pt_mode in pt_dedup_df['platform_type_mode'].unique():
-            pt_df = pt_dedup_df[pt_dedup_df['platform_type_mode'] == pt_mode]
+        # Legacy tests: those present in the previous release baseline (used for coverage)
+        if len(legacy_pt_dedup_df) > 0 and pt_mode in legacy_pt_dedup_df['platform_type_mode'].values:
+            pt_df = legacy_pt_dedup_df[legacy_pt_dedup_df['platform_type_mode'] == pt_mode]
             passed_count = len(pt_df[pt_df['status_lower'] == 'passed'])
             failed_count = len(pt_df[pt_df['status_lower'].isin(['failed', 'error', 'fail'])])
-            unique_tests = len(pt_df)  # already 1 row per test after dedup
+            unique_tests = len(pt_df)
             executions_count = unique_tests
         else:
-            # No data for this combination - show zeros
             passed_count = 0
             failed_count = 0
             unique_tests = 0
             executions_count = 0
+
+        # New tests: added in this release, not present in previous release
+        if len(new_pt_dedup_df) > 0 and pt_mode in new_pt_dedup_df['platform_type_mode'].values:
+            pt_new_df = new_pt_dedup_df[new_pt_dedup_df['platform_type_mode'] == pt_mode]
+            new_tests_count = len(pt_new_df)
+            new_tests_passed = len(pt_new_df[pt_new_df['status_lower'] == 'passed'])
+            new_tests_failed = len(pt_new_df[pt_new_df['status_lower'].isin(['failed', 'error', 'fail'])])
+        else:
+            new_tests_count = 0
+            new_tests_passed = 0
+            new_tests_failed = 0
         
-        # Calculate coverage from baseline versions
+        # Calculate coverage against previous release baseline only
         available_tests = available_df[available_df['platform_type_mode'] == pt_mode]['available_tests'].sum()
-        coverage = (unique_tests / max(available_tests, 1)) * 100 if available_tests > 0 else 0
+        coverage = min((unique_tests / max(available_tests, 1)) * 100, 100.0) if available_tests > 0 else 0
         
         platform_type_stats.append({
             'platform_type_mode': pt_mode,
@@ -829,7 +868,10 @@ def get_automation_data(conn, jira, version, builds, sprint_start, sprint_end):
             'executions': executions_count,
             'passed': passed_count,
             'failed': failed_count,
-            'pass_ratio': passed_count / max(unique_tests, 1) * 100 if unique_tests > 0 else 0
+            'pass_ratio': passed_count / max(unique_tests, 1) * 100 if unique_tests > 0 else 0,
+            'new_tests': new_tests_count,
+            'new_tests_passed': new_tests_passed,
+            'new_tests_failed': new_tests_failed,
         })
     
     stats['platform_type_data'] = platform_type_stats
@@ -838,9 +880,12 @@ def get_automation_data(conn, jira, version, builds, sprint_start, sprint_end):
     if platform_type_stats:
         total_executed = sum(p['tests'] for p in platform_type_stats)
         total_available = sum(p['available_tests'] for p in platform_type_stats)
-        stats['overall_coverage'] = (total_executed / max(total_available, 1)) * 100
+        stats['overall_coverage'] = min((total_executed / max(total_available, 1)) * 100, 100.0)
     else:
         stats['overall_coverage'] = 0
+
+    stats['new_tests_total'] = sum(p['new_tests'] for p in platform_type_stats)
+    stats['prev_version'] = prev_version
     
     # Individual platform breakdown (for detailed view)
     platform_stats = []
@@ -1926,15 +1971,28 @@ def main():
     
     # Build platform type stats HTML - always show table even with no data
     platform_html = ""
+    prev_ver = automation_data.get('prev_version', get_previous_version(version))
     # Always show the table if we have platform_type_data
     if automation_data.get('platform_type_data'):
-        platform_html = '<h3>Platform Type & Mode Summary</h3>'
-        platform_html += '<table><thead><tr><th>Platform Type & Mode</th><th>Tests Executed</th><th>Available Tests</th><th>Coverage</th><th>Executions</th><th>Passed</th><th>Failed</th><th>Pass Ratio</th></tr></thead><tbody>'
+        platform_html = f'<h3>Platform Type & Mode Summary (Coverage vs. {prev_ver})</h3>'
+        platform_html += '<table><thead><tr><th>Platform Type & Mode</th><th>Tests Executed</th><th>Baseline Tests</th><th>Coverage</th><th>Executions</th><th>Passed</th><th>Failed</th><th>Pass Ratio</th></tr></thead><tbody>'
         sorted_pt_data = sorted(automation_data['platform_type_data'], key=lambda x: x['platform_type_mode'])
         for p in sorted_pt_data:
             coverage_class = 'priority-high' if p['coverage'] < 70 else 'priority-medium' if p['coverage'] < 90 else ''
             platform_html += f'<tr><td><strong>{p["platform_type_mode"]}</strong></td><td>{p["tests"]}</td><td>{p["available_tests"]}</td><td class="{coverage_class}">{p["coverage"]:.1f}%</td><td>{p["executions"]}</td><td>{p["passed"]}</td><td>{p["failed"]}</td><td>{p["pass_ratio"]:.1f}%</td></tr>'
         platform_html += '</tbody></table>'
+
+        # New Tests section: tests added in this release not present in previous release
+        new_tests_total = automation_data.get('new_tests_total', 0)
+        if new_tests_total > 0:
+            platform_html += f'<h3 style="margin-top:24px;">New Tests in {version} (not in {prev_ver})</h3>'
+            platform_html += '<table><thead><tr><th>Platform Type & Mode</th><th>New Tests</th><th>Passed</th><th>Failed</th><th>Pass Ratio</th></tr></thead><tbody>'
+            for p in sorted_pt_data:
+                if p.get('new_tests', 0) > 0:
+                    new_pass_ratio = p['new_tests_passed'] / max(p['new_tests'], 1) * 100
+                    platform_html += f'<tr><td><strong>{p["platform_type_mode"]}</strong></td><td>{p["new_tests"]}</td><td>{p["new_tests_passed"]}</td><td>{p["new_tests_failed"]}</td><td>{new_pass_ratio:.1f}%</td></tr>'
+            platform_html += f'<tr style="font-weight:bold; background:#f5f5f5;"><td>Total New Tests</td><td>{new_tests_total}</td><td>{sum(p.get("new_tests_passed",0) for p in sorted_pt_data)}</td><td>{sum(p.get("new_tests_failed",0) for p in sorted_pt_data)}</td><td></td></tr>'
+            platform_html += '</tbody></table>'
         
         # Add detailed platform breakdown in collapsible section
         if automation_data.get('platform_data'):
