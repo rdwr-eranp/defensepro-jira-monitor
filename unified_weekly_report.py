@@ -1425,9 +1425,11 @@ def get_bugs_closed_during_period(bugs, start_date, end_date):
 
 def main():
     version = os.getenv('VERSION')
-    # BUILDS env var is deprecated - always auto-detect from database
-    # builds_env = os.getenv('BUILDS')  # Removed - use auto-detect
-    
+    builds_override = os.getenv('BUILDS', '').strip()
+    sprint_start_override = os.getenv('SPRINT_START', '').strip()
+    sprint_end_override = os.getenv('SPRINT_END', '').strip()
+    skip_ai_insights = bool(os.getenv('SKIP_AI_INSIGHTS', '').strip())
+
     if not version:
         version = input("Enter version (e.g., 10.12.0.0): ").strip()
     
@@ -1443,17 +1445,23 @@ def main():
     
     # Get sprint info
     sprint = get_current_sprint(jira)
-    sprint_start = sprint.startDate
-    sprint_end = sprint.endDate
-    
-    # Auto-detect builds from database (always)
-    print("Auto-detecting builds from database...")
-    builds = get_builds_for_version(conn, version, sprint_start, sprint_end)
-    if builds:
-        print(f"✓ Auto-detected builds: {builds}")
+    sprint_start = sprint_start_override if sprint_start_override else sprint.startDate
+    sprint_end = sprint_end_override if sprint_end_override else sprint.endDate
+    if sprint_start_override or sprint_end_override:
+        print(f"Using overridden sprint period: {sprint_start[:10]} to {sprint_end[:10]}")
+
+    # Auto-detect builds from database unless overridden
+    if builds_override:
+        builds = builds_override
+        print(f"Using overridden builds: {builds}")
     else:
-        print("⚠️  No builds found for this version in sprint period")
-        builds = ''  # Will result in 0 test executions
+        print("Auto-detecting builds from database...")
+        builds = get_builds_for_version(conn, version, sprint_start, sprint_end)
+        if builds:
+            print(f"✓ Auto-detected builds: {builds}")
+        else:
+            print("⚠️  No builds found for this version in sprint period")
+            builds = ''  # Will result in 0 test executions
     print(f"Sprint: {sprint.name}")
     print(f"Period: {sprint_start[:10]} to {sprint_end[:10]}\n")
     
@@ -1938,7 +1946,7 @@ def main():
     
     # Generate AI-powered insights
     ai_insights = None
-    if automation_data['total_tests'] > 0:
+    if automation_data['total_tests'] > 0 and not skip_ai_insights:
         ai_insights = generate_ai_insights(
             automation_data, 
             {'on_dev': len(bugs_on_dev), 'on_qa': len(bugs_on_qa)},

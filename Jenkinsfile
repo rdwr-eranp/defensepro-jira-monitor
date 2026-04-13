@@ -1,5 +1,5 @@
 pipeline {
-    // DefensePro Weekly Report Pipeline - v1.1 (Force Jenkins Reload)
+    // DefensePro Weekly Report Pipeline - v1.2
     agent { label 'built-in' }
     
     triggers {
@@ -8,19 +8,62 @@ pipeline {
     }
 
     parameters {
+        // --- Release ---
+        string(
+            name: 'VERSION',
+            defaultValue: '10.13.0.0',
+            description: 'Release version to report on (e.g. 10.14.0.0, 10.13.1.0). Overrides the hardcoded environment value.'
+        )
+
+        // --- Build range ---
+        string(
+            name: 'BUILDS',
+            defaultValue: '',
+            description: 'Comma-separated build numbers to include (e.g. 110,111,112). Leave empty for auto-detection from the database.'
+        )
+
+        // --- Sprint date range override ---
+        string(
+            name: 'SPRINT_START',
+            defaultValue: '',
+            description: 'Sprint start date override (YYYY-MM-DD). Leave empty to use the current active sprint.'
+        )
+        string(
+            name: 'SPRINT_END',
+            defaultValue: '',
+            description: 'Sprint end date override (YYYY-MM-DD). Leave empty to use the current active sprint.'
+        )
+
+        // --- Report type ---
+        choice(
+            name: 'REPORT_TYPE',
+            choices: ['unified', 'local', 'both'],
+            description: 'Which report script to run: unified (Jenkins/email), local (local HTML), or both.'
+        )
+
+        // --- Email ---
+        string(
+            name: 'EMAIL_RECIPIENTS',
+            defaultValue: 'eranp@radware.com',
+            description: 'Comma-separated list of email recipients for the weekly report notification.'
+        )
         booleanParam(
             name: 'SEND_QA_BUGS_EMAIL',
             defaultValue: false,
-            description: 'Send a QA bugs notification email to all bug assignees (disabled by default)'
+            description: 'Send a QA bugs notification email to all bug assignees (disabled by default).'
+        )
+
+        // --- Misc ---
+        booleanParam(
+            name: 'SKIP_AI_INSIGHTS',
+            defaultValue: false,
+            description: 'Skip AI-powered insights generation (faster run, useful for debugging).'
         )
     }
     
     environment {
-        // Release version to track
-        VERSION = '10.13.0.0'
-        // Build range is now auto-detected from database
-        // Set BUILDS only if you want to override auto-detection
-        // BUILDS = ''
+        // VERSION is resolved from the parameter (see first stage)
+        // Build range auto-detected from database unless BUILDS param is set
     }
     
     stages {
@@ -31,7 +74,38 @@ pipeline {
                     url: 'https://github.com/rdwr-eranp/defensepro-jira-monitor.git'
             }
         }
-        
+
+        stage('Resolve Parameters') {
+            steps {
+                script {
+                    // VERSION: use parameter value (default keeps original 10.13.0.0)
+                    env.VERSION = params.VERSION?.trim() ?: '10.13.0.0'
+
+                    // BUILDS: pass through only if non-empty
+                    env.BUILDS_OVERRIDE = params.BUILDS?.trim() ?: ''
+
+                    // Sprint date range
+                    env.SPRINT_START_OVERRIDE = params.SPRINT_START?.trim() ?: ''
+                    env.SPRINT_END_OVERRIDE   = params.SPRINT_END?.trim()   ?: ''
+
+                    // Misc flags
+                    env.SKIP_AI_INSIGHTS_FLAG = params.SKIP_AI_INSIGHTS ? '1' : ''
+                    env.REPORT_TYPE           = params.REPORT_TYPE ?: 'unified'
+                    env.EMAIL_RECIPIENTS      = params.EMAIL_RECIPIENTS?.trim() ?: 'eranp@radware.com'
+
+                    echo "=== Run Configuration ==="
+                    echo "VERSION        : ${env.VERSION}"
+                    echo "BUILDS         : ${env.BUILDS_OVERRIDE ?: '(auto-detect)'}"
+                    echo "SPRINT_START   : ${env.SPRINT_START_OVERRIDE ?: '(current sprint)'}"
+                    echo "SPRINT_END     : ${env.SPRINT_END_OVERRIDE   ?: '(current sprint)'}"
+                    echo "REPORT_TYPE    : ${env.REPORT_TYPE}"
+                    echo "EMAIL_RECIPIENTS: ${env.EMAIL_RECIPIENTS}"
+                    echo "SKIP_AI_INSIGHTS: ${params.SKIP_AI_INSIGHTS}"
+                    echo "SEND_QA_BUGS_EMAIL: ${params.SEND_QA_BUGS_EMAIL}"
+                }
+            }
+        }
+
         stage('Load GitHub Token') {
             steps {
                 script {
@@ -83,18 +157,34 @@ pipeline {
         }
         
         stage('Generate Unified Weekly Report') {
+            when {
+                expression { return env.REPORT_TYPE in ['unified', 'both'] }
+            }
             steps {
                 script {
-                    def timestamp = new Date().format('yyyy-MM-dd_HHmm')
-                    echo "[STAGE] Generating unified weekly report for version ${VERSION}"
+                    echo "[STAGE] Generating unified weekly report for version ${env.VERSION}"
                     echo "GitHub token status: ${env.GITHUB_TOKEN ? 'Available (length: ' + env.GITHUB_TOKEN.length() + ')' : 'Not set - will check .env'}"
-                    
-                    // Credentials can be provided either via:
-                    // 1. Jenkins credentials (jira-url, jira-email, jira-api-token, pg-password)
-                    // 2. .env file in the workspace
-                    // GitHub token was loaded in previous stage
-                    
-                    def hasCredentials = true
+
+                    // Build optional env-var exports that only apply when the param is set
+                    def extraUnix = ""
+                    def extraBat  = ""
+                    if (env.BUILDS_OVERRIDE) {
+                        extraUnix += "export BUILDS='${env.BUILDS_OVERRIDE}'\n"
+                        extraBat  += "set BUILDS=${env.BUILDS_OVERRIDE}\n"
+                    }
+                    if (env.SPRINT_START_OVERRIDE) {
+                        extraUnix += "export SPRINT_START='${env.SPRINT_START_OVERRIDE}'\n"
+                        extraBat  += "set SPRINT_START=${env.SPRINT_START_OVERRIDE}\n"
+                    }
+                    if (env.SPRINT_END_OVERRIDE) {
+                        extraUnix += "export SPRINT_END='${env.SPRINT_END_OVERRIDE}'\n"
+                        extraBat  += "set SPRINT_END=${env.SPRINT_END_OVERRIDE}\n"
+                    }
+                    if (env.SKIP_AI_INSIGHTS_FLAG) {
+                        extraUnix += "export SKIP_AI_INSIGHTS=1\n"
+                        extraBat  += "set SKIP_AI_INSIGHTS=1\n"
+                    }
+
                     try {
                         withCredentials([
                             string(credentialsId: 'jira-url', variable: 'JIRA_URL'),
@@ -105,70 +195,144 @@ pipeline {
                             if (isUnix()) {
                                 sh """
                                     . venv/bin/activate
-                                    export VERSION=${VERSION}
+                                    export VERSION=${env.VERSION}
                                     export GITHUB_TOKEN='${env.GITHUB_TOKEN}'
-                                    # BUILDS is auto-detected from database
+                                    ${extraUnix}
                                     python3 unified_weekly_report.py
                                 """
                             } else {
                                 bat """
                                     call venv\\Scripts\\activate.bat
-                                    set VERSION=${VERSION}
+                                    set VERSION=${env.VERSION}
                                     set GITHUB_TOKEN=${env.GITHUB_TOKEN}
-                                    REM BUILDS is auto-detected from database
+                                    ${extraBat}
                                     python unified_weekly_report.py
                                 """
                             }
                         }
                     } catch (Exception e) {
                         echo "Jenkins credentials not found, loading from .env file instead"
-                        echo "GitHub token from pipeline: ${env.GITHUB_TOKEN ? 'Available' : 'Not set - will use .env'}"
                         if (isUnix()) {
                             sh """
                                 cd ${WORKSPACE}
                                 . venv/bin/activate
-                                export VERSION=${VERSION}
+                                export VERSION=${env.VERSION}
                                 export GITHUB_TOKEN='${env.GITHUB_TOKEN}'
-                                
-                                # BUILDS is auto-detected from database
-                                
-                                # Load environment variables from .env file
+                                ${extraUnix}
                                 if [ -f .env ]; then
                                     echo "Found .env file, loading environment variables..."
-                                    set -a  # automatically export all variables
+                                    set -a
                                     . ./.env
                                     set +a
                                 else
-                                    echo "ERROR: .env file not found! Please create .env file with credentials."
-                                    echo "Required variables: JIRA_URL, JIRA_EMAIL, JIRA_API_TOKEN, PG_PASSWORD"
-                                    echo "Optional: GITHUB_TOKEN (for AI-powered insights)"
+                                    echo "ERROR: .env file not found!"
                                     exit 1
                                 fi
-                                
                                 python3 unified_weekly_report.py
                             """
                         } else {
                             bat """
                                 cd %WORKSPACE%
                                 call venv\\Scripts\\activate.bat
-                                set VERSION=${VERSION}
+                                set VERSION=${env.VERSION}
                                 set GITHUB_TOKEN=${env.GITHUB_TOKEN}
-                                REM BUILDS is auto-detected from database
-                                
-                                REM Load environment variables from .env file
+                                ${extraBat}
                                 if exist .env (
                                     echo Found .env file, loading environment variables...
-                                    for /f "usebackq tokens=* delims=" %%a in (".env") do (
-                                        set "%%a"
-                                    )
+                                    for /f "usebackq tokens=* delims=" %%a in (".env") do set "%%a"
                                 ) else (
-                                    echo ERROR: .env file not found! Please create .env file with credentials.
-                                    echo Required variables: JIRA_URL, JIRA_EMAIL, JIRA_API_TOKEN, PG_PASSWORD
-                                    echo Optional: GITHUB_TOKEN (for AI-powered insights)
+                                    echo ERROR: .env file not found!
                                     exit /b 1
                                 )
-                                
                                 python unified_weekly_report.py
+                            """
+                        }
+                    }
+                }
+            }
+        }
+
+        stage('Generate Local Weekly Report') {
+            when {
+                expression { return env.REPORT_TYPE in ['local', 'both'] }
+            }
+            steps {
+                script {
+                    echo "[STAGE] Generating local weekly report for version ${env.VERSION}"
+
+                    def extraUnix = ""
+                    def extraBat  = ""
+                    if (env.BUILDS_OVERRIDE) {
+                        extraUnix += "export BUILDS='${env.BUILDS_OVERRIDE}'\n"
+                        extraBat  += "set BUILDS=${env.BUILDS_OVERRIDE}\n"
+                    }
+                    if (env.SPRINT_START_OVERRIDE) {
+                        extraUnix += "export SPRINT_START='${env.SPRINT_START_OVERRIDE}'\n"
+                        extraBat  += "set SPRINT_START=${env.SPRINT_START_OVERRIDE}\n"
+                    }
+                    if (env.SPRINT_END_OVERRIDE) {
+                        extraUnix += "export SPRINT_END='${env.SPRINT_END_OVERRIDE}'\n"
+                        extraBat  += "set SPRINT_END=${env.SPRINT_END_OVERRIDE}\n"
+                    }
+                    if (env.SKIP_AI_INSIGHTS_FLAG) {
+                        extraUnix += "export SKIP_AI_INSIGHTS=1\n"
+                        extraBat  += "set SKIP_AI_INSIGHTS=1\n"
+                    }
+
+                    try {
+                        withCredentials([
+                            string(credentialsId: 'jira-url', variable: 'JIRA_URL'),
+                            string(credentialsId: 'jira-email', variable: 'JIRA_EMAIL'),
+                            string(credentialsId: 'jira-api-token', variable: 'JIRA_API_TOKEN'),
+                            string(credentialsId: 'pg-password', variable: 'PG_PASSWORD')
+                        ]) {
+                            if (isUnix()) {
+                                sh """
+                                    . venv/bin/activate
+                                    export VERSION=${env.VERSION}
+                                    export GITHUB_TOKEN='${env.GITHUB_TOKEN}'
+                                    ${extraUnix}
+                                    python3 local_weekly_report.py
+                                """
+                            } else {
+                                bat """
+                                    call venv\\Scripts\\activate.bat
+                                    set VERSION=${env.VERSION}
+                                    set GITHUB_TOKEN=${env.GITHUB_TOKEN}
+                                    ${extraBat}
+                                    python local_weekly_report.py
+                                """
+                            }
+                        }
+                    } catch (Exception e) {
+                        echo "Jenkins credentials not found, loading from .env file instead"
+                        if (isUnix()) {
+                            sh """
+                                cd ${WORKSPACE}
+                                . venv/bin/activate
+                                export VERSION=${env.VERSION}
+                                export GITHUB_TOKEN='${env.GITHUB_TOKEN}'
+                                ${extraUnix}
+                                if [ -f .env ]; then
+                                    set -a; . ./.env; set +a
+                                else
+                                    echo "ERROR: .env file not found!"; exit 1
+                                fi
+                                python3 local_weekly_report.py
+                            """
+                        } else {
+                            bat """
+                                cd %WORKSPACE%
+                                call venv\\Scripts\\activate.bat
+                                set VERSION=${env.VERSION}
+                                set GITHUB_TOKEN=${env.GITHUB_TOKEN}
+                                ${extraBat}
+                                if exist .env (
+                                    for /f "usebackq tokens=* delims=" %%a in (".env") do set "%%a"
+                                ) else (
+                                    echo ERROR: .env file not found! & exit /b 1
+                                )
+                                python local_weekly_report.py
                             """
                         }
                     }
@@ -178,8 +342,8 @@ pipeline {
         
         stage('Archive Reports') {
             steps {
-                // Archive unified weekly report as Jenkins artifact
-                archiveArtifacts artifacts: 'unified_weekly_report_*.html, open_bugs_report.html', 
+                // Archive all generated weekly reports and bug reports
+                archiveArtifacts artifacts: 'unified_weekly_report_*.html, local_weekly_report_*.html, open_bugs_report.html', 
                                  allowEmptyArchive: true,
                                  fingerprint: true,
                                  onlyIfSuccessful: true
@@ -299,8 +463,8 @@ pipeline {
                         <p><em>Automated report generated by Jenkins</em></p>
                         """,
                         mimeType: 'text/html',
-                        to: 'eranp@radware.com',
-                        attachmentsPattern: '**/unified_weekly_report_*.html',
+                        to: env.EMAIL_RECIPIENTS,
+                        attachmentsPattern: "**/${env.REPORT_TYPE == 'local' ? 'local' : 'unified'}_weekly_report_*.html",
                         attachLog: false
                     )
                 }
@@ -323,7 +487,7 @@ pipeline {
                 <p>Check the console output: <a href="${BUILD_URL}console">${BUILD_URL}console</a></p>
                 """,
                 mimeType: 'text/html',
-                to: 'eranp@radware.com'
+                to: env.EMAIL_RECIPIENTS
             )
         }
     }
