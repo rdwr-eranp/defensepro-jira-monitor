@@ -433,9 +433,9 @@ pipeline {
                     def reportDate = new Date().format('MMMM dd, yyyy')
                     
                     emailext(
-                        subject: "DefensePro ${VERSION} - Unified Weekly Report (${reportDate})",
+                        subject: "DefensePro ${env.VERSION} - Unified Weekly Report (${reportDate})",
                         body: """<h2>DefensePro Unified Weekly Status Report</h2>
-                        <p><strong>Release Version:</strong> ${VERSION}</p>
+                        <p><strong>Release Version:</strong> ${env.VERSION}</p>
                         <p><strong>Report Date:</strong> ${reportDate}</p>
                         <p><strong>Build:</strong> #${BUILD_NUMBER}</p>
                         
@@ -459,7 +459,7 @@ pipeline {
                         """,
                         mimeType: 'text/html',
                         to: env.EMAIL_RECIPIENTS,
-                        attachmentsPattern: "**/${env.REPORT_TYPE == 'local' ? 'local' : 'unified'}_weekly_report_*.html",
+                        attachmentsPattern: '**/*_weekly_report_*.html',
                         attachLog: false
                     )
                 }
