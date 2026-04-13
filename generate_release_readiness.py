@@ -38,6 +38,13 @@ print("STEP 1: Enter Version")
 version = input("Version (e.g., 10.12.0.0) [default: 10.12.0.0]: ").strip() or "10.12.0.0"
 print(f"✓ Version set to: {version}\n")
 
+# Derive prior versions dynamically (e.g. 10.13.0.0 → ['10.12.0.0', '10.11.0.0'])
+_vparts = version.split('.')
+_major, _minor = int(_vparts[0]), int(_vparts[1])
+_ver_suffix = '.'.join(_vparts[2:])
+prior_versions = [f'{_major}.{v}.{_ver_suffix}' for v in range(_minor - 1, max(_minor - 3, -1), -1)]
+prior_versions_sql = "', '".join(prior_versions)
+
 print("STEP 2: Enter Build Numbers")
 print("  Format options:")
 print("    - Range: 95-106 (includes all builds from 95 to 106)")
@@ -122,25 +129,19 @@ print("=" * 80)
 print(f"AUTOMATED TEST COVERAGE REPORT - Regression Mode Only (Last Execution)")
 print(f"DefensePro {version} - Builds {builds_display}")
 print("Transparent vs Routing Mode Analysis")
-print("Excluding consistently skipped tests (not run on 10.12.0.0 or 10.11.0.0)")
+print(f"Excluding consistently skipped tests (not run on {' or '.join(prior_versions)})")
 print("=" * 80)
 
-# Get consistently skipped tests (never executed on both 10.12.0.0 and 10.11.0.0)
-query_skipped_tests = """
-WITH v1_tests AS (
+# Get consistently skipped tests (never executed in any prior version)
+query_skipped_tests = f"""
+WITH prior_tests AS (
     SELECT DISTINCT test_id
     FROM test_execution
-    WHERE version = '10.12.0.0'
-),
-v2_tests AS (
-    SELECT DISTINCT test_id
-    FROM test_execution
-    WHERE version = '10.11.0.0'
+    WHERE version IN ('{prior_versions_sql}')
 )
 SELECT t.id
 FROM test t
-WHERE t.id NOT IN (SELECT test_id FROM v1_tests)
-  AND t.id NOT IN (SELECT test_id FROM v2_tests)
+WHERE t.id NOT IN (SELECT test_id FROM prior_tests)
 """
 df_skipped = pd.read_sql(query_skipped_tests, conn)
 skipped_test_ids = df_skipped['id'].tolist()
@@ -153,6 +154,27 @@ total_tests_all = df_total['total'][0]
 total_tests = total_tests_all - len(skipped_test_ids)
 print(f"Total tests in system: {total_tests_all:,}")
 print(f"Total tests (excluding consistently skipped): {total_tests:,}")
+
+# Get new test IDs: tests executed in current version not present in any prior version
+# These inflate coverage >100% and are shown in their own dedicated section instead
+_query_new_ids = f"""
+    SELECT DISTINCT te.test_id
+    FROM test_execution te
+    WHERE te.version = '{version}'
+      AND te.test_id NOT IN (
+          SELECT DISTINCT test_id
+          FROM test_execution
+          WHERE version IN ('{prior_versions_sql}')
+      )
+"""
+_df_new_ids = pd.read_sql(_query_new_ids, conn)
+new_test_ids_list = _df_new_ids['test_id'].tolist()
+print(f"New tests in {version} (not in prior releases, excluded from coverage): {len(new_test_ids_list):,}")
+if new_test_ids_list:
+    _new_ids_csv = ', '.join(str(i) for i in new_test_ids_list)
+    new_test_excl = f"AND te.test_id NOT IN ({_new_ids_csv})"
+else:
+    new_test_excl = ""
 
 # Query 1: Overall coverage with platform-specific available tests
 query_overall = f"""
@@ -173,12 +195,13 @@ WITH latest_executions AS (
         AND d.platform IS NOT NULL 
         AND d.platform != 'Unknown'
         AND d.platform NOT IN ('MRQ', 'MR', 'VL2')
+        {new_test_excl}
 ),
 available_tests AS (
     SELECT COUNT(DISTINCT te.test_id) as total_available
     FROM test_execution te
     JOIN device d ON te.device_id = d.id
-    WHERE te.version IN ('10.12.0.0', '10.11.0.0')
+    WHERE te.version IN ('{prior_versions_sql}')
         AND te.mode = 'regression'
         AND d.platform IS NOT NULL
         AND d.platform != 'Unknown'
@@ -188,8 +211,8 @@ execution_stats AS (
     SELECT 
         COUNT(DISTINCT le.test_id) as total_tests_executed,
         COUNT(*) as total_executions,
-        SUM(CASE WHEN le.status = 'Passed' THEN 1 ELSE 0 END) as tests_passed,
-        SUM(CASE WHEN le.status = 'Failed' THEN 1 ELSE 0 END) as tests_failed
+        COUNT(DISTINCT CASE WHEN le.status = 'Passed' THEN le.test_id END) as tests_passed,
+        COUNT(DISTINCT CASE WHEN le.status IN ('Failed', 'Error', 'Fail') THEN le.test_id END) as tests_failed
     FROM latest_executions le
     WHERE le.rn = 1
 )
@@ -200,7 +223,7 @@ SELECT
     es.total_executions,
     es.tests_passed,
     es.tests_failed,
-    ROUND(es.tests_passed::numeric * 100.0 / es.total_executions, 2) as pass_ratio
+    ROUND(es.tests_passed::numeric * 100.0 / NULLIF(es.total_tests_executed, 0), 2) as pass_ratio
 FROM execution_stats es
 CROSS JOIN available_tests at
 """
@@ -256,6 +279,7 @@ WITH latest_executions AS (
         AND d.platform IS NOT NULL 
         AND d.platform != 'Unknown'
         AND d.platform NOT IN ('MRQ', 'MR', 'VL2')
+        {new_test_excl}
 ),
 available_tests AS (
     SELECT 
@@ -268,7 +292,7 @@ available_tests AS (
     FROM test_execution te
     JOIN device d ON te.device_id = d.id
     LEFT JOIN profile p ON te.profile_id = p.id
-    WHERE te.version IN ('10.12.0.0', '10.11.0.0')
+    WHERE te.version IN ('{prior_versions_sql}')
         AND te.mode = 'regression'
         AND d.platform IS NOT NULL
         AND d.platform != 'Unknown'
@@ -282,9 +306,9 @@ SELECT
     at.available_tests,
     ROUND(COUNT(DISTINCT le.test_id)::numeric * 100.0 / at.available_tests, 2) as coverage_of_total,
     COUNT(*) as total_executions,
-    SUM(CASE WHEN le.status = 'Passed' THEN 1 ELSE 0 END) as tests_passed,
-    SUM(CASE WHEN le.status = 'Failed' THEN 1 ELSE 0 END) as tests_failed,
-    ROUND(SUM(CASE WHEN le.status = 'Passed' THEN 1 ELSE 0 END)::numeric * 100.0 / COUNT(*), 2) as pass_ratio
+    COUNT(DISTINCT CASE WHEN le.status = 'Passed' THEN le.test_id END) as tests_passed,
+    COUNT(DISTINCT CASE WHEN le.status IN ('Failed', 'Error', 'Fail') THEN le.test_id END) as tests_failed,
+    ROUND(COUNT(DISTINCT CASE WHEN le.status = 'Passed' THEN le.test_id END)::numeric * 100.0 / NULLIF(COUNT(DISTINCT le.test_id), 0), 2) as pass_ratio
 FROM latest_executions le
 JOIN available_tests at ON le.platform = at.platform AND le.run_mode = at.mode
 WHERE le.rn = 1
@@ -316,6 +340,7 @@ WITH latest_executions AS (
         AND d.platform IS NOT NULL 
         AND d.platform != 'Unknown'
         AND d.platform NOT IN ('MRQ', 'MR', 'VL2')
+        {new_test_excl}
 ),
 available_tests AS (
     SELECT 
@@ -323,7 +348,7 @@ available_tests AS (
         COUNT(DISTINCT te.test_id) as available_tests
     FROM test_execution te
     JOIN device d ON te.device_id = d.id
-    WHERE te.version IN ('10.12.0.0', '10.11.0.0')
+    WHERE te.version IN ('{prior_versions_sql}')
         AND te.mode = 'regression'
         AND d.platform IS NOT NULL
         AND d.platform != 'Unknown'
@@ -336,9 +361,9 @@ SELECT
     at.available_tests,
     ROUND(COUNT(DISTINCT le.test_id)::numeric * 100.0 / at.available_tests, 2) as coverage_of_total,
     COUNT(*) as total_executions,
-    SUM(CASE WHEN le.status = 'Passed' THEN 1 ELSE 0 END) as tests_passed,
-    SUM(CASE WHEN le.status = 'Failed' THEN 1 ELSE 0 END) as tests_failed,
-    ROUND(SUM(CASE WHEN le.status = 'Passed' THEN 1 ELSE 0 END)::numeric * 100.0 / COUNT(*), 2) as pass_ratio
+    COUNT(DISTINCT CASE WHEN le.status = 'Passed' THEN le.test_id END) as tests_passed,
+    COUNT(DISTINCT CASE WHEN le.status IN ('Failed', 'Error', 'Fail') THEN le.test_id END) as tests_failed,
+    ROUND(COUNT(DISTINCT CASE WHEN le.status = 'Passed' THEN le.test_id END)::numeric * 100.0 / NULLIF(COUNT(DISTINCT le.test_id), 0), 2) as pass_ratio
 FROM latest_executions le
 JOIN available_tests at ON le.platform = at.platform
 WHERE le.rn = 1
@@ -378,6 +403,26 @@ WITH latest_executions AS (
         AND d.platform IS NOT NULL 
         AND d.platform != 'Unknown'
         AND d.platform NOT IN ('MRQ', 'MR', 'VL2')
+        {new_test_excl}
+),
+baseline_tests AS (
+    SELECT DISTINCT
+        CASE 
+            WHEN d.platform IN ('UHT', 'MRQP', 'MR2') THEN 'FPGA'
+            WHEN d.platform IN ('ESXI', 'KVM', 'VL3', 'HT2') THEN 'Software'
+            WHEN d.platform IN ('MRQ_X', 'MRQX') THEN 'EZchip'
+            ELSE 'Other'
+        END as platform_type,
+        CASE WHEN p.name LIKE '%-Routing' THEN 'Routing' ELSE 'Transparent' END as mode,
+        te.test_id
+    FROM test_execution te
+    JOIN device d ON te.device_id = d.id
+    LEFT JOIN profile p ON te.profile_id = p.id
+    WHERE te.version IN ('{prior_versions_sql}')
+        AND te.mode = 'regression'
+        AND d.platform IS NOT NULL
+        AND d.platform != 'Unknown'
+        AND d.platform NOT IN ('MRQ', 'MR', 'VL2')
 ),
 available_tests AS (
     SELECT 
@@ -390,24 +435,16 @@ available_tests AS (
     FROM test_execution te
     JOIN device d ON te.device_id = d.id
     LEFT JOIN profile p ON te.profile_id = p.id
-    WHERE te.version IN ('10.12.0.0', '10.11.0.0')
+    WHERE te.version IN ('{prior_versions_sql}')
         AND te.mode = 'regression'
         AND d.platform IS NOT NULL
         AND d.platform != 'Unknown'
         AND d.platform NOT IN ('MRQ', 'MR', 'VL2')
 ),
 available_by_type AS (
-    SELECT 
-        CASE 
-            WHEN at.platform IN ('UHT', 'MRQP', 'MR2') THEN 'FPGA'
-            WHEN at.platform IN ('ESXI', 'KVM', 'VL3', 'HT2') THEN 'Software'
-            WHEN at.platform IN ('MRQ_X', 'MRQX') THEN 'EZchip'
-            ELSE 'Other'
-        END as platform_type,
-        at.mode,
-        COUNT(DISTINCT at.test_id) as available_tests
-    FROM available_tests at
-    GROUP BY platform_type, at.mode
+    SELECT platform_type, mode, COUNT(DISTINCT test_id) as available_tests
+    FROM baseline_tests
+    GROUP BY platform_type, mode
 )
 SELECT 
     CASE 
@@ -417,14 +454,22 @@ SELECT
         ELSE 'Other'
     END as platform_type,
     le.run_mode as mode,
-    COUNT(DISTINCT le.test_id) as tests_executed,
+    COUNT(DISTINCT CASE WHEN bt.test_id IS NOT NULL THEN le.test_id END) as tests_executed,
     abt.available_tests,
-    ROUND(COUNT(DISTINCT le.test_id)::numeric * 100.0 / abt.available_tests, 2) as coverage_of_total,
+    ROUND(COUNT(DISTINCT CASE WHEN bt.test_id IS NOT NULL THEN le.test_id END)::numeric * 100.0 / abt.available_tests, 2) as coverage_of_total,
     COUNT(*) as total_executions,
-    SUM(CASE WHEN le.status = 'Passed' THEN 1 ELSE 0 END) as tests_passed,
-    SUM(CASE WHEN le.status = 'Failed' THEN 1 ELSE 0 END) as tests_failed,
-    ROUND(SUM(CASE WHEN le.status = 'Passed' THEN 1 ELSE 0 END)::numeric * 100.0 / COUNT(*), 2) as pass_ratio
+    COUNT(DISTINCT CASE WHEN le.status = 'Passed' THEN le.test_id END) as tests_passed,
+    COUNT(DISTINCT CASE WHEN le.status IN ('Failed', 'Error', 'Fail') THEN le.test_id END) as tests_failed,
+    ROUND(COUNT(DISTINCT CASE WHEN le.status = 'Passed' THEN le.test_id END)::numeric * 100.0 / NULLIF(COUNT(DISTINCT le.test_id), 0), 2) as pass_ratio
 FROM latest_executions le
+LEFT JOIN baseline_tests bt ON le.test_id = bt.test_id
+    AND CASE 
+            WHEN le.platform IN ('UHT', 'MRQP', 'MR2') THEN 'FPGA'
+            WHEN le.platform IN ('ESXI', 'KVM', 'VL3', 'HT2') THEN 'Software'
+            WHEN le.platform IN ('MRQ_X', 'MRQX') THEN 'EZchip'
+            ELSE 'Other'
+        END = bt.platform_type
+    AND le.run_mode = bt.mode
 JOIN available_by_type abt ON 
     CASE 
         WHEN le.platform IN ('UHT', 'MRQP', 'MR2') THEN 'FPGA'
@@ -470,6 +515,24 @@ WITH latest_executions AS (
         AND d.platform IS NOT NULL 
         AND d.platform != 'Unknown'
         AND d.platform NOT IN ('MRQ', 'MR', 'VL2')
+        {new_test_excl}
+),
+baseline_tests AS (
+    SELECT DISTINCT
+        CASE 
+            WHEN d.platform IN ('UHT', 'MRQP', 'MR2') THEN 'FPGA'
+            WHEN d.platform IN ('ESXI', 'KVM', 'VL3', 'HT2') THEN 'Software'
+            WHEN d.platform IN ('MRQ_X', 'MRQX') THEN 'EZchip'
+            ELSE 'Other'
+        END as platform_type,
+        te.test_id
+    FROM test_execution te
+    JOIN device d ON te.device_id = d.id
+    WHERE te.version IN ('{prior_versions_sql}')
+        AND te.mode = 'regression'
+        AND d.platform IS NOT NULL
+        AND d.platform != 'Unknown'
+        AND d.platform NOT IN ('MRQ', 'MR', 'VL2')
 ),
 available_tests AS (
     SELECT 
@@ -477,22 +540,15 @@ available_tests AS (
         te.test_id
     FROM test_execution te
     JOIN device d ON te.device_id = d.id
-    WHERE te.version IN ('10.12.0.0', '10.11.0.0')
+    WHERE te.version IN ('{prior_versions_sql}')
         AND te.mode = 'regression'
         AND d.platform IS NOT NULL
         AND d.platform != 'Unknown'
         AND d.platform NOT IN ('MRQ', 'MR', 'VL2')
 ),
 available_by_type AS (
-    SELECT 
-        CASE 
-            WHEN at.platform IN ('UHT', 'MRQP', 'MR2') THEN 'FPGA'
-            WHEN at.platform IN ('ESXI', 'KVM', 'VL3', 'HT2') THEN 'Software'
-            WHEN at.platform IN ('MRQ_X', 'MRQX') THEN 'EZchip'
-            ELSE 'Other'
-        END as platform_type,
-        COUNT(DISTINCT at.test_id) as available_tests
-    FROM available_tests at
+    SELECT platform_type, COUNT(DISTINCT test_id) as available_tests
+    FROM baseline_tests
     GROUP BY platform_type
 )
 SELECT 
@@ -502,14 +558,21 @@ SELECT
         WHEN le.platform IN ('MRQ_X', 'MRQX') THEN 'EZchip'
         ELSE 'Other'
     END as platform_type,
-    COUNT(DISTINCT le.test_id) as tests_executed,
+    COUNT(DISTINCT CASE WHEN bt.test_id IS NOT NULL THEN le.test_id END) as tests_executed,
     abt.available_tests,
-    ROUND(COUNT(DISTINCT le.test_id)::numeric * 100.0 / abt.available_tests, 2) as coverage_of_total,
+    ROUND(COUNT(DISTINCT CASE WHEN bt.test_id IS NOT NULL THEN le.test_id END)::numeric * 100.0 / abt.available_tests, 2) as coverage_of_total,
     COUNT(*) as total_executions,
-    SUM(CASE WHEN le.status = 'Passed' THEN 1 ELSE 0 END) as tests_passed,
-    SUM(CASE WHEN le.status = 'Failed' THEN 1 ELSE 0 END) as tests_failed,
-    ROUND(SUM(CASE WHEN le.status = 'Passed' THEN 1 ELSE 0 END)::numeric * 100.0 / COUNT(*), 2) as pass_ratio
+    COUNT(DISTINCT CASE WHEN le.status = 'Passed' THEN le.test_id END) as tests_passed,
+    COUNT(DISTINCT CASE WHEN le.status IN ('Failed', 'Error', 'Fail') THEN le.test_id END) as tests_failed,
+    ROUND(COUNT(DISTINCT CASE WHEN le.status = 'Passed' THEN le.test_id END)::numeric * 100.0 / NULLIF(COUNT(DISTINCT le.test_id), 0), 2) as pass_ratio
 FROM latest_executions le
+LEFT JOIN baseline_tests bt ON le.test_id = bt.test_id
+    AND CASE 
+            WHEN le.platform IN ('UHT', 'MRQP', 'MR2') THEN 'FPGA'
+            WHEN le.platform IN ('ESXI', 'KVM', 'VL3', 'HT2') THEN 'Software'
+            WHEN le.platform IN ('MRQ_X', 'MRQX') THEN 'EZchip'
+            ELSE 'Other'
+        END = bt.platform_type
 JOIN available_by_type abt ON 
     CASE 
         WHEN le.platform IN ('UHT', 'MRQP', 'MR2') THEN 'FPGA'
@@ -573,7 +636,8 @@ print("\n4. BUILD COVERAGE (Last Execution per Test)")
 print("-" * 80)
 print(df_build.to_string(index=False))
 
-# Query 5: Newly added test cases (executed on current version but not on 10.11.0.0)
+# Query 5: Newly added test cases (executed on current version but not in the immediate prior version)
+prior_version = prior_versions[0]  # e.g. 10.12.0.0 when running 10.13.0.0
 query_new_tests = f"""
 WITH v1_tests AS (
     SELECT DISTINCT test_id
@@ -583,7 +647,7 @@ WITH v1_tests AS (
 v2_tests AS (
     SELECT DISTINCT test_id
     FROM test_execution
-    WHERE version = '10.11.0.0'
+    WHERE version = '{prior_version}'
 ),
 new_test_ids AS (
     SELECT test_id
@@ -597,6 +661,12 @@ test_executions AS (
         t.class_name,
         te.device_id,
         d.platform,
+        CASE
+            WHEN d.platform IN ('UHT', 'MRQP', 'MR2')       THEN 'FPGA'
+            WHEN d.platform IN ('ESXI', 'KVM', 'VL3', 'HT2') THEN 'Software'
+            WHEN d.platform IN ('MRQ_X', 'MRQX')             THEN 'EZchip'
+            ELSE 'Other'
+        END AS platform_type,
         te.status,
         te.start_time,
         ROW_NUMBER() OVER (PARTITION BY te.test_id, d.platform ORDER BY te.start_time DESC) as rn
@@ -617,34 +687,83 @@ SELECT
     class_name,
     COUNT(DISTINCT platform) as platform_count,
     STRING_AGG(DISTINCT platform, ', ' ORDER BY platform) as platforms,
-    SUM(CASE WHEN status = 'Passed' THEN 1 ELSE 0 END) as passed_count,
-    SUM(CASE WHEN status = 'Failed' THEN 1 ELSE 0 END) as failed_count
+    COUNT(DISTINCT CASE WHEN status = 'Passed' THEN platform END) as passed_platforms,
+    COUNT(DISTINCT CASE WHEN status IN ('Failed', 'Error', 'Fail') THEN platform END) as failed_platforms
 FROM test_executions
 WHERE rn = 1
 GROUP BY test_id, name, class_name
 ORDER BY class_name, name
 """
 
+query_new_tests_by_platform_type = f"""
+WITH v1_tests AS (
+    SELECT DISTINCT test_id FROM test_execution WHERE version = '{version}'
+),
+v2_tests AS (
+    SELECT DISTINCT test_id FROM test_execution WHERE version = '{prior_version}'
+),
+new_test_ids AS (
+    SELECT test_id FROM v1_tests WHERE test_id NOT IN (SELECT test_id FROM v2_tests)
+),
+latest AS (
+    SELECT
+        te.test_id,
+        CASE
+            WHEN d.platform IN ('UHT', 'MRQP', 'MR2')       THEN 'FPGA'
+            WHEN d.platform IN ('ESXI', 'KVM', 'VL3', 'HT2') THEN 'Software'
+            WHEN d.platform IN ('MRQ_X', 'MRQX')             THEN 'EZchip'
+            ELSE 'Other'
+        END AS platform_type,
+        CASE WHEN p.name LIKE '%-Routing' THEN 'Routing' ELSE 'Transparent' END AS mode,
+        te.status,
+        ROW_NUMBER() OVER (
+            PARTITION BY te.test_id,
+                CASE
+                    WHEN d.platform IN ('UHT', 'MRQP', 'MR2')       THEN 'FPGA'
+                    WHEN d.platform IN ('ESXI', 'KVM', 'VL3', 'HT2') THEN 'Software'
+                    WHEN d.platform IN ('MRQ_X', 'MRQX')             THEN 'EZchip'
+                    ELSE 'Other'
+                END,
+                CASE WHEN p.name LIKE '%-Routing' THEN 'Routing' ELSE 'Transparent' END
+            ORDER BY te.start_time DESC) as rn
+    FROM test_execution te
+    JOIN device d ON te.device_id = d.id
+    LEFT JOIN profile p ON te.profile_id = p.id
+    WHERE te.version = '{version}'
+        AND te.build IN ('{builds_str}')
+        AND te.mode = 'regression'
+        AND te.test_id IN (SELECT test_id FROM new_test_ids)
+        AND d.platform IS NOT NULL AND d.platform != 'Unknown'
+        AND d.platform NOT IN ('MRQ', 'MR', 'VL2')
+)
+SELECT
+    platform_type,
+    mode,
+    COUNT(DISTINCT test_id) as tests_executed,
+    COUNT(DISTINCT CASE WHEN status = 'Passed' THEN test_id END) as tests_passed,
+    COUNT(DISTINCT CASE WHEN status IN ('Failed', 'Error', 'Fail') THEN test_id END) as tests_failed,
+    ROUND(COUNT(DISTINCT CASE WHEN status = 'Passed' THEN test_id END)::numeric * 100.0
+          / NULLIF(COUNT(DISTINCT test_id), 0), 2) as pass_ratio
+FROM latest
+WHERE rn = 1 AND platform_type != 'Other'
+GROUP BY platform_type, mode
+ORDER BY platform_type, mode
+"""
+
 df_new_tests = pd.read_sql(query_new_tests, conn)
-print(f"\n5. NEWLY ADDED TEST CASES (Not in 10.11.0.0)")
+df_new_tests_by_pt = pd.read_sql(query_new_tests_by_platform_type, conn)
+print(f"\n5. NEWLY ADDED TEST CASES (Not in {prior_version})")
 print("-" * 80)
 print(f"Total Newly Added Tests: {len(df_new_tests):,}")
 if not df_new_tests.empty:
-    # Group by class_name
-    class_groups = df_new_tests.groupby('class_name').agg({
-        'test_id': 'count',
-        'platform_count': 'mean',
-        'passed_count': 'sum',
-        'failed_count': 'sum'
-    }).round(1)
-    class_groups = class_groups.rename(columns={'test_id': 'test_count'})
-    class_groups = class_groups.sort_values('test_count', ascending=False)
-    
+    print(f"\nResults by Platform Type / Mode:")
+    print(df_new_tests_by_pt.to_string(index=False))
     # Save to CSV
     csv_filename = f"Release_{version.replace('.', '_')}_New_Tests.csv"
     df_new_tests.to_csv(csv_filename, index=False)
     print(f"\n✅ New tests exported to: {csv_filename}")
 else:
+    df_new_tests_by_pt = pd.DataFrame()
     print("No newly added tests found.")
 
 conn.close()
@@ -1273,35 +1392,57 @@ html_content += f"""            </tbody>
 
 # Add newly added test cases section
 if not df_new_tests.empty:
-    # Extract main features from test names (taking the first part before |)
-    features = df_new_tests['test_name'].apply(lambda x: x.split('|')[0].strip() if '|' in x else x.split()[0] if x else 'Other')
-    top_features = features.value_counts().head(5)
-    
-    # Build features list as HTML
-    features_html = ""
-    for i, (feat, count) in enumerate(top_features.items(), 1):
-        features_html += f"<div style='padding: 5px 0; border-bottom: 1px solid #eee;'><strong>{i}. {feat}</strong>: {count} tests</div>"
-    
+    # Build platform type breakdown table rows
+    pt_rows_html = ''
+    for _, row in df_new_tests_by_pt.iterrows():
+        pass_class = 'pass-high' if row['pass_ratio'] >= 90 else ('pass-medium' if row['pass_ratio'] >= 80 else 'pass-low')
+        pt_rows_html += f"""<tr>
+            <td>{row['platform_type']}</td>
+            <td>{row['mode']}</td>
+            <td>{int(row['tests_executed']):,}</td>
+            <td>{int(row['tests_passed']):,}</td>
+            <td>{int(row['tests_failed']):,}</td>
+            <td class="{pass_class}">{row['pass_ratio']:.1f}%</td>
+        </tr>"""
+
+    total_new = len(df_new_tests)
+    all_passed = int((df_new_tests['failed_platforms'] == 0).sum())
+    any_failed = int((df_new_tests['failed_platforms'] > 0).sum())
+    overall_pass_ratio = round(all_passed / max(total_new, 1) * 100, 1)
+
     html_content += f"""
     <div class="summary-box">
-        <h2>🆕 Newly Added Test Cases (Not in 10.11.0.0)</h2>
+        <h2>&#x1F195; Newly Added Test Cases (Not in {prior_version})</h2>
         <div class="metric-grid">
             <div class="metric-card">
                 <div class="label">Total New Tests</div>
-                <div class="value">{len(df_new_tests)}</div>
+                <div class="value">{total_new}</div>
                 <div class="label">First executed in {version}</div>
             </div>
-            <div class="metric-card">
-                <div class="label">Main Features Added</div>
-                <div class="value">{len(features.unique())}</div>
-                <div class="label">Top: {top_features.index[0] if len(top_features) > 0 else 'N/A'}</div>
+            <div class="metric-card" style="background: linear-gradient(135deg, #00b894, #00cec9);">
+                <div class="label">Fully Passing</div>
+                <div class="value">{all_passed}</div>
+                <div class="label">Pass on all platforms</div>
+            </div>
+            <div class="metric-card" style="background: linear-gradient(135deg, #d63031, #e17055);">
+                <div class="label">Have Failures</div>
+                <div class="value">{any_failed}</div>
+                <div class="label">Fail on &ge;1 platform</div>
+            </div>
+            <div class="metric-card" style="background: linear-gradient(135deg, #6c5ce7, #a29bfe);">
+                <div class="label">Overall Pass Rate</div>
+                <div class="value">{overall_pass_ratio}%</div>
+                <div class="label">Fully passing / total</div>
             </div>
         </div>
-        <div style="margin-top: 20px; padding: 15px; background-color: #f8f9fa; border-radius: 5px;">
-            <h3 style="margin: 0 0 10px 0; color: #333;">Top 5 Features by Test Count:</h3>
-            {features_html}
-        </div>
-        <p style="margin-top: 15px;"><strong>Note:</strong> Full list of {len(df_new_tests)} new tests available in Release_{version.replace('.', '_')}_New_Tests.csv</p>
+        <table style="margin-top:16px;">
+            <thead><tr>
+                <th>Platform Type</th><th>Mode</th>
+                <th>Tests Executed</th><th>Passed</th><th>Failed</th><th>Pass Ratio</th>
+            </tr></thead>
+            <tbody>{pt_rows_html}</tbody>
+        </table>
+        <p style="margin-top:15px;"><strong>Note:</strong> Full list of {total_new} new tests available in Release_{version.replace('.', '_')}_New_Tests.csv</p>
     </div>
 """
 

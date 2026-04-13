@@ -60,7 +60,7 @@ When replaying issue changelogs to determine status at a specific date:
 
 ## Version Information
 
-**Version:** {10.12.0.0} (e.g., 10.12.0.0)
+**Version:** {10.13.0.0} (e.g., 10.12.0.0)
 **Project:** DP (DefensePro)
 **Report Date:** {DATE}
 

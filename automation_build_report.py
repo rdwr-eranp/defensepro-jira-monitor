@@ -28,6 +28,15 @@ PLATFORM_TYPE_MAP = {
 ALL_PT_MODES = [f'{pt} - {m}' for pt in ['EZchip', 'FPGA', 'Software']
                                for m in ['Routing', 'Transparent']]
 
+KNOWN_PLATFORMS = ('UHT','MRQP','MR2','ESXI','KVM','VL3','HT2','MRQ_X','MRQX')
+
+
+def get_prior_versions(version):
+    """Return the two preceding minor versions, e.g. 10.13.0.0 → ['10.12.0.0','10.11.0.0']."""
+    parts = version.split('.')
+    major, minor, rest = int(parts[0]), int(parts[1]), '.'.join(parts[2:])
+    return [f'{major}.{v}.{rest}' for v in range(minor - 1, max(minor - 3, -1), -1)]
+
 
 # ---------------------------------------------------------------------------
 # DB helpers
@@ -113,9 +122,10 @@ def get_latest_status_by_platform_type(conn, version, min_build):
     return df
 
 
-def get_available_tests_baseline(conn):
+def get_available_tests_baseline(conn, prior_versions):
     """Count distinct tests per platform_type+mode from prior releases (baseline)."""
-    sql = """
+    ver_list = "', '".join(prior_versions)
+    sql = f"""
         SELECT
             CASE
                 WHEN d.platform IN ('UHT','MRQP','MR2')       THEN 'FPGA'
@@ -128,12 +138,52 @@ def get_available_tests_baseline(conn):
         FROM test_execution te
         JOIN device  d ON te.device_id  = d.id
         JOIN profile p ON te.profile_id = p.id
-        WHERE te.version IN ('10.12.0.0','10.11.0.0')
+        WHERE te.version IN ('{ver_list}')
           AND te.mode = 'regression'
         GROUP BY 1, 2
     """
     df = query(conn, sql)
     df['pt_mode'] = df['platform_type'] + ' - ' + df['mode']
+    return df
+
+
+def get_new_tests(conn, version, min_build, prior_versions):
+    """Find tests in the current version that did not appear in any prior version."""
+    ver_list = "', '".join(prior_versions)
+    plat_list = "', '".join(KNOWN_PLATFORMS)
+    sql = f"""
+        WITH current_tests AS (
+            SELECT DISTINCT
+                te.test_id,
+                t.name AS test_name,
+                CASE
+                    WHEN d.platform IN ('UHT','MRQP','MR2')       THEN 'FPGA'
+                    WHEN d.platform IN ('ESXI','KVM','VL3','HT2') THEN 'Software'
+                    WHEN d.platform IN ('MRQ_X','MRQX')           THEN 'EZchip'
+                END AS platform_type,
+                CASE WHEN p.name LIKE '%-Routing' THEN 'Routing' ELSE 'Transparent' END AS mode
+            FROM test_execution te
+            JOIN device  d ON te.device_id  = d.id
+            JOIN profile p ON te.profile_id = p.id
+            JOIN test    t ON te.test_id    = t.id
+            WHERE te.version = '{version}'
+              AND te.build  >= {min_build}
+              AND te.mode    = 'regression'
+              AND d.platform IN ('{plat_list}')
+        )
+        SELECT ct.test_id, ct.test_name, ct.platform_type, ct.mode
+        FROM current_tests ct
+        WHERE ct.test_id NOT IN (
+            SELECT DISTINCT test_id
+            FROM test_execution
+            WHERE version IN ('{ver_list}')
+              AND mode = 'regression'
+        )
+        ORDER BY ct.platform_type, ct.mode, ct.test_name
+    """
+    df = query(conn, sql)
+    if not df.empty:
+        df['pt_mode'] = df['platform_type'] + ' - ' + df['mode']
     return df
 
 
@@ -198,7 +248,7 @@ def pass_color(ratio):
     return '#dc3545'
 
 
-def build_html(version, min_build, build_df, latest_df, baseline_df, critical_df):
+def build_html(version, min_build, build_df, latest_df, baseline_df, critical_df, new_tests_df, prior_versions):
     now = datetime.now().strftime('%d %b %Y, %H:%M')
     builds_list = ', '.join(str(b) for b in sorted(build_df['build'].tolist()))
     total_execs  = int(build_df['executions'].sum())   # raw total across all builds (CI activity)
@@ -316,6 +366,47 @@ def build_html(version, min_build, build_df, latest_df, baseline_df, critical_df
     failed_js  = str([int(build_df[build_df['build'] == b]['failed'].values[0]) for b in sorted(build_df['build'].tolist())])
     ratio_js   = str([round(build_df[build_df['build'] == b]['pass_ratio'].values[0], 1) for b in sorted(build_df['build'].tolist())])
 
+    # --- New tests section ---
+    prior_ver_str = ', '.join(prior_versions)
+    n_new_tests = new_tests_df['test_id'].nunique() if not new_tests_df.empty else 0
+    if not new_tests_df.empty:
+        new_summary_rows = ''
+        for pt_mode in ALL_PT_MODES:
+            sub = new_tests_df[new_tests_df['pt_mode'] == pt_mode]
+            count = sub['test_id'].nunique()
+            if count:
+                new_summary_rows += (
+                    f'<tr>'
+                    f'<td><strong>{html.escape(pt_mode)}</strong></td>'
+                    f'<td style="text-align:center;">{count}</td>'
+                    f'</tr>'
+                )
+        new_detail_rows = ''
+        for _, row in new_tests_df.drop_duplicates('test_id').sort_values('test_name').iterrows():
+            new_detail_rows += (
+                f'<tr>'
+                f'<td>{html.escape(str(row["test_id"]))}</td>'
+                f'<td>{html.escape(str(row["test_name"]))}</td>'
+                f'</tr>'
+            )
+        new_tests_html = (
+            f'<h2>&#x1F195; New Tests (Not in Prior Releases: {html.escape(prior_ver_str)})</h2>'
+            f'<p>These <strong>{n_new_tests}</strong> tests are new to this release and not yet included in '
+            f'the coverage baseline. They will be part of the baseline for the next release.</p>'
+            f'<table><thead><tr><th>Platform Type / Mode</th><th>New Test Count</th></tr></thead>'
+            f'<tbody>{new_summary_rows}</tbody></table>'
+            f'<details><summary style="cursor:pointer;color:#4472C4;font-weight:bold;margin:12px 0;">'
+            f'&#9654; Show all {n_new_tests} new test details</summary>'
+            f'<table style="margin-top:8px;"><thead><tr>'
+            f'<th style="width:130px;">Test ID</th><th>Test Name</th>'
+            f'</tr></thead><tbody>{new_detail_rows}</tbody></table></details>'
+        )
+    else:
+        new_tests_html = (
+            f'<h2>&#x1F195; New Tests (Not in Prior Releases: {html.escape(prior_ver_str)})</h2>'
+            f'<p style="color:#4caf50;">&#10003; No new tests &#8212; all executed tests were present in prior releases.</p>'
+        )
+
     return f"""<!DOCTYPE html>
 <html>
 <head>
@@ -366,6 +457,9 @@ def build_html(version, min_build, build_df, latest_df, baseline_df, critical_df
   </div>
   <div class="kpi" style="background:linear-gradient(135deg,#e74c3c,#c0392b);">
     <div class="kpi-num">{len(critical_df)}</div><div class="kpi-lbl">Critical Failures</div>
+  </div>
+  <div class="kpi" style="background:linear-gradient(135deg,#0984e3,#74b9ff);">
+    <div class="kpi-num">{n_new_tests}</div><div class="kpi-lbl">New Tests Added</div>
   </div>
 </div>
 
@@ -442,6 +536,8 @@ Plotly.newPlot('buildChart', [
   <thead><tr><th style="width:120px;">Test ID</th><th>Test Name</th><th style="width:130px;">Failed Platforms</th><th style="width:130px;">Total Platforms</th></tr></thead>
   <tbody>{critical_rows}</tbody>
 </table>
+
+{new_tests_html}
 
 <p style="color:#999;font-size:12px;margin-top:40px;">
   Report generated {now} &nbsp;|&nbsp; version {version} &nbsp;|&nbsp;
@@ -695,8 +791,15 @@ def main():
     latest_df = get_latest_status_by_platform_type(conn, version, min_build)
     print(f'✓ {len(latest_df)} latest execution records')
 
+    prior_versions = get_prior_versions(version)
+    print(f'Prior versions (baseline): {prior_versions}')
+
     print('Fetching baseline test counts...')
-    baseline_df = get_available_tests_baseline(conn)
+    baseline_df = get_available_tests_baseline(conn, prior_versions)
+
+    print('Fetching new tests (not in prior releases)...')
+    new_tests_df = get_new_tests(conn, version, min_build, prior_versions)
+    print(f'✓ {new_tests_df["test_id"].nunique() if not new_tests_df.empty else 0} new tests found')
 
     print('Identifying critical failures...')
     critical_df = get_critical_failures(conn, version, min_build)
@@ -705,7 +808,7 @@ def main():
     conn.close()
 
     print('\nGenerating HTML report...')
-    html_content = build_html(version, min_build, build_df, latest_df, baseline_df, critical_df)
+    html_content = build_html(version, min_build, build_df, latest_df, baseline_df, critical_df, new_tests_df, prior_versions)
     with open(out_file, 'w', encoding='utf-8') as f:
         f.write(html_content)
 
