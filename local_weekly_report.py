@@ -1941,7 +1941,8 @@ def main():
         fig_prio.update_layout(
             title='Open Bugs by Priority per Release',
             xaxis_title='Release Version', yaxis_title='Bug Count',
-            barmode='stack', height=380,
+            barmode='stack', height=420,
+            margin=dict(l=50, r=20, t=60, b=80),
             legend=dict(x=0.02, y=0.98), hovermode='x unified'
         )
 
@@ -1964,7 +1965,8 @@ def main():
         fig_phase.update_layout(
             title='Open Bugs by Phase (Dev vs QA) per Release',
             xaxis_title='Release Version', yaxis_title='Bug Count',
-            barmode='stack', height=380,
+            barmode='stack', height=420,
+            margin=dict(l=50, r=20, t=60, b=80),
             legend=dict(x=0.02, y=0.98), hovermode='x unified'
         )
 
@@ -1996,9 +1998,9 @@ def main():
 
         release_dist_chart_html = (
             summary_table +
-            '<div style="display:flex;gap:16px;flex-wrap:wrap">'
-            f'<div style="flex:1;min-width:360px">{prio_html_chart}</div>'
-            f'<div style="flex:1;min-width:360px">{phase_html_chart}</div>'
+            '<div style="display:flex;gap:16px;flex-wrap:wrap;align-items:flex-start">'
+            f'<div style="flex:1;min-width:400px;min-height:440px">{prio_html_chart}</div>'
+            f'<div style="flex:1;min-width:400px;min-height:440px">{phase_html_chart}</div>'
             '</div>'
         )
     
