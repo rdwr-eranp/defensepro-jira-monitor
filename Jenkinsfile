@@ -459,6 +459,7 @@ pipeline {
                         """,
                         mimeType: 'text/html',
                         to: env.EMAIL_RECIPIENTS,
+                        recipientProviders: [],
                         attachmentsPattern: '**/*_weekly_report_*.html',
                         attachLog: false,
                         presendScript: 'cancel = false'
@@ -484,6 +485,7 @@ pipeline {
                 """,
                 mimeType: 'text/html',
                 to: env.EMAIL_RECIPIENTS,
+                recipientProviders: [],
                 presendScript: 'cancel = false'
             )
         }
