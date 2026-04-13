@@ -61,11 +61,6 @@ pipeline {
         )
     }
     
-    environment {
-        // VERSION is resolved from the parameter (see first stage)
-        // Build range auto-detected from database unless BUILDS param is set
-    }
-    
     stages {
         stage('Checkout') {
             steps {
