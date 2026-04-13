@@ -921,8 +921,6 @@ def get_cross_release_distribution(jira):
             "AND status NOT IN (Accepted, Closed, Trash) "
             "AND fixVersion in unreleasedVersions() "
             'AND fixVersion != "10.100.0.0" '
-            'AND summary !~ "Web Assist" '
-            'AND summary !~ "Cloud Assist" '
             "ORDER BY fixVersion ASC, priority DESC"
         )
         all_open_bugs = jira.search_issues(
