@@ -1048,7 +1048,7 @@ def get_cross_release_distribution(jira):
         )
         all_open_bugs = jira.search_issues(
             jql, maxResults=False,
-            fields="key,priority,fixVersions,customfield_10129"
+            fields="key,priority,status,fixVersions,customfield_10129"
         )
 
         dist = {}
@@ -1068,18 +1068,22 @@ def get_cross_release_distribution(jira):
                 else 'None'
             )
 
+            status_name = bug.fields.status.name.lower() if hasattr(bug.fields, 'status') else ''
+            phase = 'qa' if 'completed' in status_name else 'dev'
+
             fix_versions = bug.fields.fixVersions
             version_names = [v.name for v in fix_versions] if fix_versions else ['Unassigned']
 
             for ver in version_names:
                 if ver not in dist:
-                    dist[ver] = {'High': 0, 'Medium': 0, 'Low': 0}
+                    dist[ver] = {'High': 0, 'Medium': 0, 'Low': 0, 'dev': 0, 'qa': 0}
                 if priority in ('High', 'Highest', 'Critical', 'Blocker'):
                     dist[ver]['High'] += 1
                 elif priority == 'Medium':
                     dist[ver]['Medium'] += 1
                 else:
                     dist[ver]['Low'] += 1
+                dist[ver][phase] += 1
 
         total = sum(v['High'] + v['Medium'] + v['Low'] for v in dist.values())
         print(f"✓ Cross-release distribution: {len(dist)} releases, {total} open bugs"
@@ -1903,53 +1907,102 @@ def main():
     )
     high_sev_chart_html = fig_high_sev.to_html(include_plotlyjs=False, div_id='high-sev-chart', full_html=False)
     
-    # Create release distribution chart
+    # Create release distribution charts
     release_dist_chart_html = ""
     if historical_trends['release_distribution']:
-        fig_release_dist = go.Figure()
         releases = list(historical_trends['release_distribution'].keys())
-        high_counts = [historical_trends['release_distribution'][r]['High'] for r in releases]
-        medium_counts = [historical_trends['release_distribution'][r]['Medium'] for r in releases]
-        low_counts = [historical_trends['release_distribution'][r]['Low'] for r in releases]
-        
-        fig_release_dist.add_trace(go.Bar(
-            name='High Priority', 
-            x=releases, 
-            y=high_counts, 
+        high_counts   = [historical_trends['release_distribution'][r].get('High', 0) for r in releases]
+        medium_counts = [historical_trends['release_distribution'][r].get('Medium', 0) for r in releases]
+        low_counts    = [historical_trends['release_distribution'][r].get('Low', 0) for r in releases]
+        dev_counts    = [historical_trends['release_distribution'][r].get('dev', 0) for r in releases]
+        qa_counts     = [historical_trends['release_distribution'][r].get('qa', 0) for r in releases]
+
+        # Chart 1: Priority breakdown per release
+        fig_prio = go.Figure()
+        fig_prio.add_trace(go.Bar(
+            name='High/Critical/Blocker',
+            x=releases, y=high_counts,
             marker_color='#d32f2f',
-            text=[f'{c}' if c > 0 else '' for c in high_counts],
-            textposition='inside',
-            textfont=dict(color='white', size=12)
+            text=[str(c) if c > 0 else '' for c in high_counts],
+            textposition='inside', textfont=dict(color='white', size=12)
         ))
-        fig_release_dist.add_trace(go.Bar(
-            name='Medium Priority', 
-            x=releases, 
-            y=medium_counts, 
+        fig_prio.add_trace(go.Bar(
+            name='Medium',
+            x=releases, y=medium_counts,
             marker_color='#f57c00',
-            text=[f'{c}' if c > 0 else '' for c in medium_counts],
-            textposition='inside',
-            textfont=dict(color='white', size=12)
+            text=[str(c) if c > 0 else '' for c in medium_counts],
+            textposition='inside', textfont=dict(color='white', size=12)
         ))
-        fig_release_dist.add_trace(go.Bar(
-            name='Low Priority', 
-            x=releases, 
-            y=low_counts, 
+        fig_prio.add_trace(go.Bar(
+            name='Low',
+            x=releases, y=low_counts,
             marker_color='#0288d1',
-            text=[f'{c}' if c > 0 else '' for c in low_counts],
-            textposition='inside',
-            textfont=dict(color='white', size=12)
+            text=[str(c) if c > 0 else '' for c in low_counts],
+            textposition='inside', textfont=dict(color='white', size=12)
         ))
-        
-        fig_release_dist.update_layout(
-            title='Open Bugs Across Active Releases',
-            xaxis_title='Release Version',
-            yaxis_title='Bug Count',
-            barmode='stack',
-            height=400,
-            legend=dict(x=0.02, y=0.98),
-            hovermode='x unified'
+        fig_prio.update_layout(
+            title='Open Bugs by Priority per Release',
+            xaxis_title='Release Version', yaxis_title='Bug Count',
+            barmode='stack', height=380,
+            legend=dict(x=0.02, y=0.98), hovermode='x unified'
         )
-        release_dist_chart_html = fig_release_dist.to_html(include_plotlyjs=False, div_id='release-dist-chart', full_html=False)
+
+        # Chart 2: Dev vs QA per release
+        fig_phase = go.Figure()
+        fig_phase.add_trace(go.Bar(
+            name='On Dev',
+            x=releases, y=dev_counts,
+            marker_color='#7b1fa2',
+            text=[str(c) if c > 0 else '' for c in dev_counts],
+            textposition='inside', textfont=dict(color='white', size=12)
+        ))
+        fig_phase.add_trace(go.Bar(
+            name='On QA',
+            x=releases, y=qa_counts,
+            marker_color='#388e3c',
+            text=[str(c) if c > 0 else '' for c in qa_counts],
+            textposition='inside', textfont=dict(color='white', size=12)
+        ))
+        fig_phase.update_layout(
+            title='Open Bugs by Phase (Dev vs QA) per Release',
+            xaxis_title='Release Version', yaxis_title='Bug Count',
+            barmode='stack', height=380,
+            legend=dict(x=0.02, y=0.98), hovermode='x unified'
+        )
+
+        prio_html_chart  = fig_prio.to_html(include_plotlyjs=False, div_id='release-dist-prio-chart', full_html=False)
+        phase_html_chart = fig_phase.to_html(include_plotlyjs=False, div_id='release-dist-phase-chart', full_html=False)
+
+        # Summary table
+        table_rows = ''
+        for r in releases:
+            d = historical_trends['release_distribution'][r]
+            h, m, lo, dv, qa = d.get('High', 0), d.get('Medium', 0), d.get('Low', 0), d.get('dev', 0), d.get('qa', 0)
+            total = dv + qa
+            table_rows += (
+                f'<tr><td><strong>{r}</strong></td>'
+                f'<td style="color:#d32f2f;font-weight:bold">{h}</td>'
+                f'<td style="color:#f57c00">{m}</td>'
+                f'<td style="color:#0288d1">{lo}</td>'
+                f'<td style="color:#7b1fa2">{dv}</td>'
+                f'<td style="color:#388e3c">{qa}</td>'
+                f'<td><strong>{total}</strong></td></tr>'
+            )
+        summary_table = (
+            '<table style="width:auto;margin-bottom:16px">'
+            '<thead><tr>'
+            '<th>Release</th><th>High/Critical</th><th>Medium</th><th>Low</th>'
+            '<th>On Dev</th><th>On QA</th><th>Total Open</th>'
+            '</tr></thead><tbody>' + table_rows + '</tbody></table>'
+        )
+
+        release_dist_chart_html = (
+            summary_table +
+            '<div style="display:flex;gap:16px;flex-wrap:wrap">'
+            f'<div style="flex:1;min-width:360px">{prio_html_chart}</div>'
+            f'<div style="flex:1;min-width:360px">{phase_html_chart}</div>'
+            '</div>'
+        )
     
     # Generate priority breakdown HTML
     priority_html = ""
