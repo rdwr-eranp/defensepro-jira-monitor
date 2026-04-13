@@ -460,7 +460,8 @@ pipeline {
                         mimeType: 'text/html',
                         to: env.EMAIL_RECIPIENTS,
                         attachmentsPattern: '**/*_weekly_report_*.html',
-                        attachLog: false
+                        attachLog: false,
+                        presendScript: 'cancel = false'
                     )
                 }
             }
@@ -482,7 +483,8 @@ pipeline {
                 <p>Check the console output: <a href="${BUILD_URL}console">${BUILD_URL}console</a></p>
                 """,
                 mimeType: 'text/html',
-                to: env.EMAIL_RECIPIENTS
+                to: env.EMAIL_RECIPIENTS,
+                presendScript: 'cancel = false'
             )
         }
     }
