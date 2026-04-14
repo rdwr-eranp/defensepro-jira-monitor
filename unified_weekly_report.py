@@ -1896,9 +1896,10 @@ def main():
         total_counts  = [d + q for d, q in zip(dev_counts, qa_counts)]
 
         # Chart 1: Priority breakdown per release
+        print(f"  release_distribution keys: {releases}")
         fig_prio = go.Figure()
         fig_prio.add_trace(go.Bar(
-            name='High/Critical/Blocker',
+            name='High/Critical',
             x=releases, y=high_counts,
             marker_color='#d32f2f',
             text=[str(c) if c > 0 else '' for c in high_counts],
@@ -1921,9 +1922,9 @@ def main():
         fig_prio.update_layout(
             title='Open Bugs by Priority per Release',
             xaxis_title='Release Version', yaxis_title='Bug Count',
-            barmode='stack', height=460,
-            margin=dict(l=50, r=20, t=60, b=80),
-            legend=dict(x=0.02, y=0.98),
+            barmode='stack', height=420,
+            margin=dict(l=50, r=120, t=60, b=80),
+            legend=dict(x=1.0, y=1.0, xanchor='right', yanchor='top'),
             hovermode='x unified',
             bargap=0.4, bargroupgap=0.1
         )
@@ -1982,7 +1983,7 @@ def main():
         release_dist_chart_html = (
             summary_table +
             '<div style="display:flex;gap:16px;flex-wrap:wrap;align-items:flex-start">'
-            f'<div style="flex:1;min-width:400px;min-height:460px">{prio_html_chart}</div>'
+            f'<div style="flex:1;min-width:400px;min-height:440px">{prio_html_chart}</div>'
             f'<div style="flex:1;min-width:400px;min-height:440px">{phase_html_chart}</div>'
             '</div>'
         )
