@@ -1921,9 +1921,10 @@ def main():
         fig_prio.update_layout(
             title='Open Bugs by Priority per Release',
             xaxis_title='Release Version', yaxis_title='Bug Count',
-            barmode='stack', height=420,
-            margin=dict(l=50, r=20, t=60, b=80),
-            legend=dict(x=0.02, y=0.98), hovermode='x unified'
+            barmode='stack', height=460,
+            margin=dict(l=50, r=20, t=60, b=110),
+            legend=dict(orientation='h', yanchor='top', y=-0.22, xanchor='center', x=0.5),
+            hovermode='x unified'
         )
 
         # Chart 2: Dev vs QA per release
@@ -1979,7 +1980,7 @@ def main():
         release_dist_chart_html = (
             summary_table +
             '<div style="display:flex;gap:16px;flex-wrap:wrap;align-items:flex-start">'
-            f'<div style="flex:1;min-width:400px;min-height:440px">{prio_html_chart}</div>'
+            f'<div style="flex:1;min-width:400px;min-height:480px">{prio_html_chart}</div>'
             f'<div style="flex:1;min-width:400px;min-height:440px">{phase_html_chart}</div>'
             '</div>'
         )
