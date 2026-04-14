@@ -11,7 +11,7 @@ pipeline {
         // --- Release ---
         string(
             name: 'VERSION',
-            defaultValue: '10.13.0.0',
+            defaultValue: '10.14.0.0',
             description: 'Release version to report on (e.g. 10.14.0.0, 10.13.1.0). Overrides the hardcoded environment value.'
         )
 
@@ -73,8 +73,8 @@ pipeline {
         stage('Resolve Parameters') {
             steps {
                 script {
-                    // VERSION: use parameter value (default keeps original 10.13.0.0)
-                    env.VERSION = params.VERSION?.trim() ?: '10.13.0.0'
+                    // VERSION: use parameter value (default keeps original 10.14.0.0)
+                    env.VERSION = params.VERSION?.trim() ?: '10.14.0.0'
 
                     // BUILDS: pass through only if non-empty
                     env.BUILDS_OVERRIDE = params.BUILDS?.trim() ?: ''

@@ -1924,7 +1924,8 @@ def main():
             barmode='stack', height=460,
             margin=dict(l=50, r=20, t=60, b=110),
             legend=dict(orientation='h', yanchor='top', y=-0.22, xanchor='center', x=0.5),
-            hovermode='x unified'
+            hovermode='x unified',
+            bargap=0.4, bargroupgap=0.1
         )
 
         # Chart 2: Dev vs QA per release
@@ -1948,7 +1949,8 @@ def main():
             xaxis_title='Release Version', yaxis_title='Bug Count',
             barmode='stack', height=420,
             margin=dict(l=50, r=20, t=60, b=80),
-            legend=dict(x=0.02, y=0.98), hovermode='x unified'
+            legend=dict(x=0.02, y=0.98), hovermode='x unified',
+            bargap=0.4, bargroupgap=0.1
         )
 
         prio_html_chart  = fig_prio.to_html(include_plotlyjs=False, div_id='release-dist-prio-chart', full_html=False)
