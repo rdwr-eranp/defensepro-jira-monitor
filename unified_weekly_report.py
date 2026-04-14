@@ -1922,9 +1922,9 @@ def main():
         fig_prio.update_layout(
             title='Open Bugs by Priority per Release',
             xaxis_title='Release Version', yaxis_title='Bug Count',
-            barmode='stack', height=420,
-            margin=dict(l=50, r=120, t=60, b=80),
-            legend=dict(x=1.0, y=1.0, xanchor='right', yanchor='top'),
+            barmode='stack', height=380,
+            margin=dict(l=50, r=20, t=60, b=80),
+            legend=dict(orientation='h', yanchor='bottom', y=1.02, xanchor='left', x=0),
             hovermode='x unified',
             bargap=0.4, bargroupgap=0.1
         )
@@ -1948,9 +1948,10 @@ def main():
         fig_phase.update_layout(
             title='Open Bugs by Phase (Dev vs QA) per Release',
             xaxis_title='Release Version', yaxis_title='Bug Count',
-            barmode='stack', height=420,
+            barmode='stack', height=380,
             margin=dict(l=50, r=20, t=60, b=80),
-            legend=dict(x=0.02, y=0.98), hovermode='x unified',
+            legend=dict(orientation='h', yanchor='bottom', y=1.02, xanchor='left', x=0),
+            hovermode='x unified',
             bargap=0.4, bargroupgap=0.1
         )
 
@@ -1982,9 +1983,10 @@ def main():
 
         release_dist_chart_html = (
             summary_table +
-            '<div style="display:flex;gap:16px;flex-wrap:wrap;align-items:flex-start">'
-            f'<div style="flex:1;min-width:400px;min-height:440px">{prio_html_chart}</div>'
-            f'<div style="flex:1;min-width:400px;min-height:440px">{phase_html_chart}</div>'
+            '<div style="display:flex;flex-direction:column;gap:20px">')
+        release_dist_chart_html += (
+            f'<div style="width:100%">{prio_html_chart}</div>'
+            f'<div style="width:100%">{phase_html_chart}</div>'
             '</div>'
         )
     
