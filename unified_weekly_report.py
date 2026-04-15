@@ -537,6 +537,193 @@ def get_builds_for_version(conn, version, sprint_start, sprint_end):
     builds = df['build'].tolist()
     return ','.join([str(b) for b in builds])
 
+
+def get_sprint_list(jira, n_closed=4):
+    """
+    Return the last n_closed closed sprints for the DP board plus the current
+    active sprint.  Each entry is a dict with keys: name, startDate, endDate, state.
+    Sorted chronologically (oldest first). Returns [] on any error.
+    """
+    try:
+        boards = jira.boards()
+        board_id = None
+        # Prefer board whose active sprint name starts with 'DP-'
+        for board in boards:
+            try:
+                active = jira.sprints(board.id, state='active')
+                if active and active[0].name.startswith('DP-'):
+                    board_id = board.id
+                    break
+            except Exception:
+                continue
+        # Fallback: match board name
+        if not board_id:
+            for board in boards:
+                if 'DP' in board.name or 'DefensePro' in board.name:
+                    board_id = board.id
+                    break
+        if not board_id:
+            return []
+
+        closed_sprints = jira.sprints(board_id, state='closed')
+        # Sort closed sprints by end date descending, take last n_closed
+        def _end(s):
+            return getattr(s, 'endDate', '') or ''
+
+        closed_sorted = sorted(closed_sprints, key=_end, reverse=True)[:n_closed]
+        closed_sorted = sorted(closed_sorted, key=_end)  # oldest first
+
+        active_sprints = jira.sprints(board_id, state='active')
+        all_sprints = closed_sorted + (active_sprints[:1] if active_sprints else [])
+
+        result = []
+        for s in all_sprints:
+            result.append({
+                'name': s.name,
+                'startDate': getattr(s, 'startDate', '') or '',
+                'endDate': getattr(s, 'endDate', '') or '',
+                'state': getattr(s, 'state', 'unknown'),
+            })
+        return result
+    except Exception as e:
+        print(f"   ⚠️ Could not fetch sprint list: {e}")
+        return []
+
+
+def get_ci_sprint_history(conn, version, sprint_list, prev_version=None):
+    """
+    For each sprint in sprint_list compute CI metrics from the postgres DB.
+    Returns a list of dicts (one per sprint):
+        {sprint_name, start_date, end_date, coverage, pass_ratio,
+         tests_executed, passed, failed}
+    Sprints with no DB data are skipped.
+    """
+    if prev_version is None:
+        prev_version = get_previous_version(version)
+
+    # Baseline test count per platform_type_mode from previous release
+    baseline_query = f"""
+        SELECT COUNT(DISTINCT te.test_id) AS baseline_count
+        FROM test_execution te
+        WHERE te.version = '{prev_version}'
+          AND te.mode = 'regression'
+    """
+    try:
+        baseline_df = pd.read_sql(baseline_query, conn)
+        baseline_total = int(baseline_df['baseline_count'].iloc[0]) if not baseline_df.empty else 0
+    except Exception:
+        baseline_total = 0
+
+    history = []
+    for sprint in sprint_list:
+        s_start = sprint.get('startDate', '')[:19]
+        s_end   = sprint.get('endDate', '')[:19]
+        if not s_start or not s_end:
+            continue
+        try:
+            metrics_query = f"""
+                SELECT
+                    COUNT(DISTINCT te.test_id) AS tests_executed,
+                    SUM(CASE WHEN LOWER(te.status) = 'passed' THEN 1 ELSE 0 END) AS passed,
+                    SUM(CASE WHEN LOWER(te.status) IN ('failed','error','fail') THEN 1 ELSE 0 END) AS failed
+                FROM test_execution te
+                WHERE te.version = '{version}'
+                  AND te.mode = 'regression'
+                  AND te.start_time BETWEEN '{s_start}' AND '{s_end}'
+            """
+            df = pd.read_sql(metrics_query, conn)
+            if df.empty or df['tests_executed'].iloc[0] == 0:
+                continue
+            tests_executed = int(df['tests_executed'].iloc[0])
+            passed = int(df['passed'].iloc[0] or 0)
+            failed = int(df['failed'].iloc[0] or 0)
+            total_executions = passed + failed
+            coverage = min(tests_executed / max(baseline_total, 1) * 100, 100.0)
+            pass_ratio = passed / max(total_executions, 1) * 100
+            history.append({
+                'sprint_name':     sprint['name'],
+                'start_date':      s_start[:10],
+                'end_date':        s_end[:10],
+                'state':           sprint.get('state', ''),
+                'tests_executed':  tests_executed,
+                'passed':          passed,
+                'failed':          failed,
+                'coverage':        round(coverage, 1),
+                'pass_ratio':      round(pass_ratio, 1),
+            })
+        except Exception as e:
+            print(f"   ⚠️ CI history query failed for sprint '{sprint['name']}': {e}")
+            continue
+    return history
+
+
+def get_sub_exec_sprint_history(jira, version, sprint_list):
+    """
+    For each sprint in sprint_list query Jira to get sub test execution
+    completion snapshot at the sprint end date.
+    Strategy: count sub execs resolved (Done/Accepted/Complete) on or before
+    sprint_end, and all sub execs created on or before sprint_end, to derive
+    a completion % snapshot per sprint.
+    Returns a list of dicts (one per sprint):
+        {sprint_name, start_date, end_date, total, completed, in_progress,
+         not_started, completion_pct}
+    """
+    history = []
+    base_jql = (
+        f'project = DP AND fixVersion = "{version}" '
+        f'AND type = "sub test execution" '
+        f'AND status != Trash '
+        f'AND summary !~ "Web Assist" '
+        f'AND summary !~ "Cloud Assist"'
+    )
+    for sprint in sprint_list:
+        s_end = sprint.get('endDate', '')[:10]
+        s_start = sprint.get('startDate', '')[:10]
+        if not s_end:
+            continue
+        try:
+            # Total sub execs created by sprint end
+            total_jql = base_jql + f' AND created <= "{s_end}"'
+            total_issues = jira.search_issues(total_jql, maxResults=False,
+                                              fields='status', json_result=True)
+            total = total_issues.get('total', 0)
+            if total == 0:
+                continue
+
+            completed_jql = base_jql + (
+                f' AND status in (Done, Accepted, Complete) AND resolved <= "{s_end}"'
+            )
+            completed_issues = jira.search_issues(completed_jql, maxResults=False,
+                                                  fields='status', json_result=True)
+            completed = completed_issues.get('total', 0)
+
+            in_progress_jql = base_jql + (
+                f' AND status = "In Progress" AND created <= "{s_end}"'
+            )
+            in_progress_issues = jira.search_issues(in_progress_jql, maxResults=False,
+                                                    fields='status', json_result=True)
+            in_progress = in_progress_issues.get('total', 0)
+
+            not_started = max(total - completed - in_progress, 0)
+            completion_pct = round(completed / max(total, 1) * 100, 1)
+
+            history.append({
+                'sprint_name':    sprint['name'],
+                'start_date':     s_start,
+                'end_date':       s_end,
+                'state':          sprint.get('state', ''),
+                'total':          total,
+                'completed':      completed,
+                'in_progress':    in_progress,
+                'not_started':    not_started,
+                'completion_pct': completion_pct,
+            })
+        except Exception as e:
+            print(f"   ⚠️ Sub exec history query failed for sprint '{sprint['name']}': {e}")
+            continue
+    return history
+
+
 def get_previous_version(version):
     """Derive the previous release version by decrementing the minor number (e.g., 10.13.0.0 → 10.12.0.0)"""
     parts = version.split('.')
@@ -1271,77 +1458,182 @@ def generate_insights(platform_type_data, stats, sprint_name):
     return insights
 
 
-def generate_ai_insights(stats, bug_data, platform_data, critical_failures, sprint_name):
+def generate_ai_insights(stats, bug_data, platform_data, critical_failures, sprint_name,
+                          historical_trends=None, sub_exec_stats=None, xray_summary=None,
+                          ci_sprint_history=None, sub_exec_sprint_history=None):
     """
-    Generate AI-powered insights using GitHub Models API
-    Falls back gracefully if API fails or token not available
+    Generate AI-powered insights using GitHub Models API.
+    Includes trend analysis for coverage, bugs, CI status, and sub test execution progress
+    across previous sprints so the AI can reason about overall release trajectory.
+    Falls back gracefully if API fails or token not available.
     """
     from openai import OpenAI
-    
+
     github_token = os.getenv('GITHUB_TOKEN')
     if not github_token:
         print("   ⓘ GitHub token not found, skipping AI insights")
         return None
-    
+
     try:
         # Initialize OpenAI client with GitHub Models endpoint
         client = OpenAI(
             base_url="https://models.inference.ai.azure.com",
             api_key=github_token
         )
-        
-        # Prepare context for AI
+
+        # ── Current snapshot ────────────────────────────────────────────────
         context = f"""
 Analyze this DefensePro weekly test report for {sprint_name}:
 
-KEY METRICS:
+CURRENT CI SNAPSHOT:
 - Test Coverage: {stats.get('overall_coverage', 0):.1f}%
 - Pass Ratio: {stats.get('pass_ratio', 0):.1f}%
 - Tests Executed: {stats.get('total_executed', 0):,}
 - Failed Tests: {stats.get('total_failed', 0):,}
+- Critical Failures (all platforms): {critical_failures if isinstance(critical_failures, int) else len(critical_failures)}
 - Bugs in Dev: {bug_data.get('on_dev', 0)}
 - Bugs in QA: {bug_data.get('on_qa', 0)}
-- Critical Failures (all platforms): {critical_failures if isinstance(critical_failures, int) else len(critical_failures)}
 
-PLATFORM PERFORMANCE:
+PLATFORM PERFORMANCE (current sprint):
 """
-        
-        # Add top 5 platforms
-        for p in platform_data[:5]:
+        for p in platform_data[:8]:
             context += f"- {p['platform_type_mode']}: {p['coverage']:.1f}% coverage, {p['pass_ratio']:.1f}% pass rate\n"
-        
+
+        # ── CI per-sprint history ────────────────────────────────────────────
+        if ci_sprint_history:
+            context += "\nCI ITERATION TREND (per sprint, oldest→newest):\n"
+            context += "  Sprint                      | Coverage | Pass Ratio | Tests | Passed | Failed\n"
+            context += "  ----------------------------|----------|------------|-------|--------|-------\n"
+            for s in ci_sprint_history:
+                marker = " ◄ CURRENT" if s.get('state', '').lower() == 'active' else ""
+                context += (
+                    f"  {s['sprint_name']:<28} | {s['coverage']:>6.1f}%  | {s['pass_ratio']:>8.1f}%  |"
+                    f" {s['tests_executed']:>5} | {s['passed']:>6} | {s['failed']:>5}{marker}\n"
+                )
+            # Trend summary
+            if len(ci_sprint_history) >= 2:
+                first = ci_sprint_history[0]
+                last_closed = next((s for s in reversed(ci_sprint_history) if s.get('state', '') != 'active'), None)
+                if last_closed and first != last_closed:
+                    cov_delta = last_closed['coverage'] - first['coverage']
+                    pr_delta  = last_closed['pass_ratio'] - first['pass_ratio']
+                    context += (
+                        f"  Coverage change over tracked sprints: {cov_delta:+.1f}%\n"
+                        f"  Pass ratio change over tracked sprints: {pr_delta:+.1f}%\n"
+                    )
+
+        # ── Bug trend (last 6 weekly data points) ───────────────────────────
+        if historical_trends and historical_trends.get('dates'):
+            dates = historical_trends['dates'][-6:]
+            dev_counts = historical_trends['dev'][-6:]
+            qa_counts = historical_trends['qa'][-6:]
+            total_counts = historical_trends['total'][-6:]
+            high_dev = historical_trends.get('high_sev_dev', [])[-6:]
+            high_qa = historical_trends.get('high_sev_qa', [])[-6:]
+
+            context += "\nBUG TREND (last 6 weeks, open bugs only):\n"
+            context += "  Date        | Total | Dev | QA | High/Crit Dev | High/Crit QA\n"
+            context += "  ------------|-------|-----|----|---------------|-------------\n"
+            for i, date in enumerate(dates):
+                hd = high_dev[i] if i < len(high_dev) else '-'
+                hq = high_qa[i] if i < len(high_qa) else '-'
+                context += f"  {date} |  {total_counts[i]:3d}  | {dev_counts[i]:3d} | {qa_counts[i]:2d} |     {hd}           |     {hq}\n"
+
+            if len(total_counts) >= 2:
+                delta = total_counts[-1] - total_counts[-2]
+                direction = f"+{delta}" if delta > 0 else str(delta)
+                context += f"  Week-over-week change in total open bugs: {direction}\n"
+
+        # ── Sub test execution current progress ─────────────────────────────
+        if sub_exec_stats:
+            total_se = sub_exec_stats.get('total', 0)
+            done_se = sub_exec_stats.get('completed', 0)
+            progress_se = sub_exec_stats.get('in_progress', 0)
+            not_started_se = sub_exec_stats.get('not_started', 0)
+            pct_done = (done_se / total_se * 100) if total_se > 0 else 0
+            context += f"""
+SUB TEST EXECUTION PROGRESS (current sprint):
+- Total Sub Test Executions: {total_se}
+- Completed (Done/Accepted): {done_se} ({pct_done:.1f}%)
+- In Progress: {progress_se}
+- Not Started: {not_started_se}
+"""
+            team_breakdown = sub_exec_stats.get('team_breakdown', {})
+            if team_breakdown:
+                context += "  Team breakdown (Done / In-Progress / Not-Started):\n"
+                for team, ts in sorted(team_breakdown.items()):
+                    context += f"    {team}: {ts.get('Done',0)} / {ts.get('In Progress',0)} / {ts.get('Not Started',0)}\n"
+
+        # ── Sub test execution per-sprint history ────────────────────────────
+        if sub_exec_sprint_history:
+            context += "\nSUB TEST EXECUTION TREND (per sprint, oldest→newest):\n"
+            context += "  Sprint                      | Total | Done | In-Prog | Not-Started | Done%\n"
+            context += "  ----------------------------|-------|------|---------|-------------|------\n"
+            for s in sub_exec_sprint_history:
+                marker = " ◄ CURRENT" if s.get('state', '').lower() == 'active' else ""
+                context += (
+                    f"  {s['sprint_name']:<28} | {s['total']:>5} | {s['completed']:>4} |"
+                    f" {s['in_progress']:>7} | {s['not_started']:>11} | {s['completion_pct']:>4.1f}%{marker}\n"
+                )
+            if len(sub_exec_sprint_history) >= 2:
+                first_pct = sub_exec_sprint_history[0]['completion_pct']
+                last_closed_se = next(
+                    (s for s in reversed(sub_exec_sprint_history) if s.get('state', '') != 'active'), None
+                )
+                if last_closed_se and last_closed_se['completion_pct'] != first_pct:
+                    delta_pct = last_closed_se['completion_pct'] - first_pct
+                    context += f"  Completion rate change over tracked sprints: {delta_pct:+.1f}%\n"
+
+        # ── Xray sub test execution metrics ─────────────────────────────────
+        if xray_summary and xray_summary.get('total_tests', 0) > 0:
+            context += f"""
+XRAY SUB EXECUTION METRICS (current):
+- Total Tests Linked: {xray_summary.get('total_tests', 0):,}
+- Executed: {xray_summary.get('total_executed', 0):,} ({xray_summary.get('execution_rate', 0):.1f}%)
+- Passed: {xray_summary.get('total_passed', 0):,}
+- Pass Ratio: {xray_summary.get('pass_ratio', 0):.1f}%
+- Automation Coverage: {xray_summary.get('automation_coverage', 0):.1f}%
+- Testing Coverage: {xray_summary.get('testing_coverage', 0):.1f}%
+"""
+
+        # ── AI instructions ──────────────────────────────────────────────────
         context += """
 
-Provide 4-5 actionable insights as HTML formatted content:
-1. Critical risks requiring immediate attention
-2. Quality trends and patterns
-3. Platform-specific observations
-4. Prioritized recommendations with timelines
+Provide exactly 5 insight sections as HTML:
+1. <h4>Coverage Trend Analysis</h4> – Compare coverage across sprints. Is the velocity sufficient to reach 90%+ before release? Identify the gap.
+2. <h4>Bug Trend Analysis</h4> – Interpret weekly open-bug trajectory, highlight rising high/critical counts, assess burn-down health vs. release timeline.
+3. <h4>CI Iteration Progress</h4> – Evaluate sprint-over-sprint pass ratio and failure trends. Flag regressions or quality improvements. Assess current sprint risk.
+4. <h4>Sub Test Execution Progress</h4> – Compare per-sprint completion rates. Identify stalled teams or cycles, flag risk of incomplete coverage before release.
+5. <h4>Prioritized Action Plan</h4> – Numbered list (max 6 items) of concrete recommendations ordered by urgency, referencing specific sprints or teams.
 
-Format with <h4> headers and <ul>/<ol> lists. Be concise, technical, and actionable.
+Use <ul>/<ol> and <strong> for emphasis. Be concise, technical, and data-driven. Limit total response to ~1100 tokens.
 """
-        
-        print("   🤖 Generating AI insights using GitHub Models...")
-        
+
+        print("   🤖 Generating AI trend insights using GitHub Models...")
+
         response = client.chat.completions.create(
-            model="o3-mini",  # Strong reasoning model
+            model="o3-mini",
             messages=[
                 {
                     "role": "system",
-                    "content": "You are a QA automation expert analyzing DefensePro release test reports. Provide technical, actionable insights in HTML format."
+                    "content": (
+                        "You are a senior QA automation expert analyzing DefensePro release test reports. "
+                        "Focus on sprint-over-sprint trend direction, risk signals, and actionable recommendations. "
+                        "Output valid HTML only — no markdown, no code fences."
+                    )
                 },
                 {
                     "role": "user",
                     "content": context
                 }
             ],
-            max_completion_tokens=1000
+            max_completion_tokens=1400
         )
-        
+
         ai_insights = response.choices[0].message.content.strip()
-        print("   ✓ AI insights generated successfully\n")
+        print("   ✓ AI trend insights generated successfully\n")
         return ai_insights
-        
+
     except Exception as e:
         print(f"   ⚠️ AI insights generation failed: {e}")
         print("   Continuing with rule-based insights only...\n")
@@ -1495,6 +1787,14 @@ def main():
     print("Fetching automation data...")
     automation_data = get_automation_data(conn, jira, version, builds, sprint_start, sprint_end)
     print(f"✓ Found {automation_data['total_tests']} tests with {automation_data['total_executions']} executions\n")
+
+    # Fetch previous sprints for trend analysis
+    print("Fetching sprint list for trend history...")
+    sprint_list = get_sprint_list(jira, n_closed=4)
+    if sprint_list:
+        print(f"✓ Found {len(sprint_list)} sprints for trend analysis\n")
+    else:
+        print("⚠️  Could not retrieve sprint list; trend history will be skipped\n")
     
     # Categorize bugs based on status category and name
     bugs_on_dev = []
@@ -2007,13 +2307,43 @@ def main():
     # Generate AI-powered insights
     ai_insights = None
     if automation_data['total_tests'] > 0 and not skip_ai_insights:
+        # Build sub test execution stats for the AI prompt
+        sub_exec_stats_for_ai = {
+            'total': len(sub_execs),
+            'completed': sub_exec_completed,
+            'in_progress': sub_exec_in_progress,
+            'not_started': sub_exec_not_started,
+            'team_breakdown': dict(team_stats),
+        }
+
+        # Gather per-sprint CI and sub test execution history for trend context
+        ci_history = []
+        sub_exec_history = []
+        if sprint_list:
+            print("   Fetching CI sprint history for AI insights...")
+            ci_history = get_ci_sprint_history(
+                conn, version, sprint_list,
+                prev_version=automation_data.get('prev_version')
+            )
+            print(f"   ✓ CI history: {len(ci_history)} sprints\n")
+
+            print("   Fetching sub test execution sprint history for AI insights...")
+            sub_exec_history = get_sub_exec_sprint_history(jira, version, sprint_list)
+            print(f"   ✓ Sub exec history: {len(sub_exec_history)} sprints\n")
+
         ai_insights = generate_ai_insights(
-            automation_data, 
+            automation_data,
             {'on_dev': len(bugs_on_dev), 'on_qa': len(bugs_on_qa)},
             automation_data.get('platform_type_data', []),
             automation_data.get('critical_failures', []),
-            sprint.name
+            sprint.name,
+            historical_trends=historical_trends,
+            sub_exec_stats=sub_exec_stats_for_ai,
+            xray_summary=sub_exec_xray_data.get('summary'),
+            ci_sprint_history=ci_history,
+            sub_exec_sprint_history=sub_exec_history,
         )
+
     
     # Build platform type stats HTML - always show table even with no data
     platform_html = ""
