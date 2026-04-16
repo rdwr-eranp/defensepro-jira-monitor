@@ -522,7 +522,8 @@ def get_current_sprint(jira, board_id=None):
     return FakeSprint()
 
 def get_builds_for_version(conn, version, sprint_start, sprint_end):
-    """Auto-detect builds for a version within the sprint date range"""
+    """Auto-detect builds for a version within the sprint date range.
+    Falls back to the most recent builds for the version if none are found in the sprint window."""
     query = f"""
         SELECT DISTINCT build
         FROM test_execution
@@ -532,9 +533,25 @@ def get_builds_for_version(conn, version, sprint_start, sprint_end):
         ORDER BY build
     """
     df = pd.read_sql(query, conn)
-    if df.empty:
+    if not df.empty:
+        builds = df['build'].tolist()
+        return ','.join([str(b) for b in builds])
+
+    # Fallback: no builds in the sprint window — return the most recent builds for this version
+    print(f"   ⚠️  No builds found for {version} in sprint window; falling back to most recent builds for this version...")
+    fallback_query = f"""
+        SELECT DISTINCT build
+        FROM test_execution
+        WHERE version = '{version}'
+          AND mode = 'regression'
+        ORDER BY build DESC
+        LIMIT 10
+    """
+    fb_df = pd.read_sql(fallback_query, conn)
+    if fb_df.empty:
         return None
-    builds = df['build'].tolist()
+    builds = fb_df['build'].tolist()
+    print(f"   Fallback builds: {builds}")
     return ','.join([str(b) for b in builds])
 
 
@@ -734,17 +751,27 @@ def get_previous_version(version):
 def get_automation_data(conn, jira, version, builds, sprint_start, sprint_end):
     """Get automation test data for the sprint period"""
     # builds are integers in the database, don't quote them
-    builds_str = ','.join([b.strip() for b in builds.split(',')])
+    builds_str = ','.join([b.strip() for b in builds.split(',')]) if builds else ''
     prev_version = get_previous_version(version)
-    
-    # Get tests executed in sprint
-    tests_query = f"""
-        SELECT DISTINCT te.test_id
-        FROM test_execution te
-        WHERE te.version = '{version}'
-          AND te.start_time BETWEEN '{sprint_start}' AND '{sprint_end}'
-          AND te.mode = 'regression'
-    """
+
+    # Get tests executed: prefer filtering by build number (more reliable across sprint boundaries),
+    # fall back to sprint date range when no builds are known.
+    if builds_str:
+        tests_query = f"""
+            SELECT DISTINCT te.test_id
+            FROM test_execution te
+            WHERE te.version = '{version}'
+              AND te.build IN ({builds_str})
+              AND te.mode = 'regression'
+        """
+    else:
+        tests_query = f"""
+            SELECT DISTINCT te.test_id
+            FROM test_execution te
+            WHERE te.version = '{version}'
+              AND te.start_time BETWEEN '{sprint_start}' AND '{sprint_end}'
+              AND te.mode = 'regression'
+        """
     tests_df = pd.read_sql(tests_query, conn)
     test_ids = tests_df['test_id'].tolist()
     
