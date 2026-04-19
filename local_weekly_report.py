@@ -1614,10 +1614,13 @@ Use <ul>/<ol> and <strong> for emphasis. Be concise, technical, and data-driven.
                     "content": context
                 }
             ],
-            max_completion_tokens=1400
+            max_completion_tokens=8000
         )
 
         ai_insights = response.choices[0].message.content.strip()
+        if not ai_insights:
+            print("   ⚠️ AI insights: model returned empty response (token budget exhausted?)")
+            return None
         print("   ✓ AI trend insights generated successfully\n")
         return ai_insights
 
