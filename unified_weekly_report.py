@@ -1752,7 +1752,7 @@ def main():
     builds_override = os.getenv('BUILDS', '').strip()
     sprint_start_override = os.getenv('SPRINT_START', '').strip()
     sprint_end_override = os.getenv('SPRINT_END', '').strip()
-    skip_ai_insights = bool(os.getenv('SKIP_AI_INSIGHTS', '').strip())
+    skip_ai_insights = os.getenv('SKIP_AI_INSIGHTS', '').strip().lower() in ('1', 'true', 'yes')
 
     if not version:
         version = input("Enter version (e.g., 10.12.0.0): ").strip()
