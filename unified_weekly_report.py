@@ -1895,7 +1895,7 @@ def main():
         f'AND summary !~ "Cloud Assist"'
     )
     
-    sub_execs = jira.search_issues(sub_exec_jql, maxResults=False, fields='summary,status,assignee,customfield_10129')
+    sub_execs = jira.search_issues(sub_exec_jql, maxResults=False, fields='summary,status,assignee,customfield_10001')
     print(f"✓ Found {len(sub_execs)} sub test executions (Web Assist & Cloud Assist & Trash excluded)\n")
     
     # Get Xray data for sub test executions (execution rate, automation coverage)
@@ -1931,9 +1931,9 @@ def main():
     
     # Helper function to extract team name safely
     def get_team_name(issue):
-        scrum_team = getattr(issue.fields, 'customfield_10129', None)
+        scrum_team = getattr(issue.fields, 'customfield_10001', None)
         if scrum_team:
-            return scrum_team.value if hasattr(scrum_team, 'value') else str(scrum_team)
+            return scrum_team.name if hasattr(scrum_team, 'name') else str(scrum_team)
         return 'Unassigned'
     
     # Group sub test executions by scrum team
@@ -1941,7 +1941,7 @@ def main():
     team_stats = defaultdict(lambda: {'Done': 0, 'In Progress': 0, 'Not Started': 0, 'total': 0})
     
     for se in sub_execs:
-        # Get scrum team name from customfield_10129
+        # Get scrum team name from customfield_10001
         team = get_team_name(se)
         
         # Determine status category
