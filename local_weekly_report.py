@@ -1780,16 +1780,15 @@ def main():
         if 'trash' in status_name:
             continue
 
-        # Closed/Done status
-        if 'done' in status_category or 'complete' in status_category:
-            bugs_closed.append(bug)
-        elif 'accepted' in status_name:
-            bugs_closed.append(bug)
-        # On QA status (Completed but not Accepted)
-        elif 'completed' in status_name and 'accepted' not in status_name:
+        # On QA status (Completed but not Accepted) - must be checked BEFORE 'done' category
+        # because 'Completed' status has statusCategory='Done' in Jira
+        if 'completed' in status_name and 'accepted' not in status_name:
             bugs_on_qa.append(bug)
         elif 'resolved' in status_name or 'fixed' in status_name:
             bugs_on_qa.append(bug)
+        # Closed/Done status
+        elif 'done' in status_category or 'accepted' in status_name or 'complete' in status_category:
+            bugs_closed.append(bug)
         # On Dev status
         elif 'in progress' in status_category or 'in progress' in status_name:
             bugs_on_dev.append(bug)
