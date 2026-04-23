@@ -791,8 +791,7 @@ def get_sub_exec_sprint_history(jira, version, sprint_list):
         f'project = DP AND fixVersion = "{version}" '
         f'AND type = "sub test execution" '
         f'AND status != Trash '
-        f'AND summary !~ "Web Assist" '
-        f'AND summary !~ "Cloud Assist"'
+        f'AND summary !~ "Web Assist"'
     )
     for sprint in sprint_list:
         s_end   = sprint.get('endDate', '')[:10]
@@ -1133,7 +1132,6 @@ def get_automation_data(conn, jira, version, builds, sprint_start, sprint_end):
         AND status != Trash
         AND Origin in ("functional automation", "automation", "Functional Automation", "Automation")
         AND summary !~ "Web Assist"
-        AND summary !~ "Cloud Assist"
     """
     
     try:
@@ -1208,7 +1206,7 @@ def get_cross_release_distribution(jira):
     """
     print("Fetching open bugs across all active releases for distribution chart...")
     try:
-        # Single query: open bugs on any unreleased version, excluding DP Runners + Web Assist + Cloud Assist
+        # Single query: open bugs on any unreleased version, excluding DP Runners + Web Assist
         jql = (
             "project = DP AND issuetype = Bug "
             "AND status NOT IN (Accepted, Closed, Trash) "
@@ -1685,7 +1683,7 @@ def main():
     
     print(f"\n{'='*70}")
     print(f"LOCAL WEEKLY REPORT - DefensePro {version}")
-    print(f"  (Web Assist & Cloud Assist EXCLUDED)")
+    print(f"  (Web Assist EXCLUDED)")
     print(f"{'='*70}\n")
     
     # Connect to Jira and PostgreSQL (PG is optional)
@@ -1735,16 +1733,15 @@ def main():
         print(f"⚠️  WARNING: Version {version} is ARCHIVED in Jira")
         print(f"   This is a historical version with no active work.\n")
     
-    # Get bug data — Web Assist + Cloud Assist EXCLUDED from JQL
-    print("Fetching bug data (excluding Web Assist & Cloud Assist)...")
+    # Get bug data — Web Assist EXCLUDED from JQL
+    print("Fetching bug data (excluding Web Assist)...")
     jql = (
         f'project = DP AND fixVersion = "{version}" AND type = Bug '
         f'AND status != Trash '
-        f'AND summary !~ "Web Assist" '
-        f'AND summary !~ "Cloud Assist"'
+        f'AND summary !~ "Web Assist"'
     )
     bugs = jira.search_issues(jql, maxResults=False, expand='changelog')
-    print(f"✓ Found {len(bugs)} bugs (Web Assist & Cloud Assist & Trash excluded)\n")
+    print(f"✓ Found {len(bugs)} bugs (Web Assist & Trash excluded)\n")
     
     # Get automation data
     empty_automation = {
@@ -1829,17 +1826,16 @@ def main():
     if bugs_on_qa:
         print(f"  Sample QA bug status: {bugs_on_qa[0].fields.status.name}")
     
-    # Get sub test executions — Web Assist + Cloud Assist EXCLUDED
-    print("Fetching sub test executions (excluding Web Assist & Cloud Assist)...")
+    # Get sub test executions — Web Assist EXCLUDED
+    print("Fetching sub test executions (excluding Web Assist)...")
     sub_exec_jql = (
         f'project = DP AND fixVersion = "{version}" '
         f'AND type = "sub test execution" '
         f'AND status != Trash '
-        f'AND summary !~ "Web Assist" '
-        f'AND summary !~ "Cloud Assist"'
+        f'AND summary !~ "Web Assist"'
     )
     sub_execs = jira.search_issues(sub_exec_jql, maxResults=False, fields='summary,status,assignee,customfield_10001')
-    print(f"✓ Found {len(sub_execs)} sub test executions (Web Assist & Cloud Assist & Trash excluded)\n")
+    print(f"✓ Found {len(sub_execs)} sub test executions (Web Assist & Trash excluded)\n")
     
     # Get Xray data for sub test executions (execution rate, automation coverage)
     print("Fetching Xray data for Sub Test Executions...")
@@ -2436,8 +2432,8 @@ def main():
         {version_warning_html}
 
         <div class="alert-box info" style="background: linear-gradient(135deg, #e8f5e9, #e3f2fd); border-left: 5px solid #43a047;">
-            <strong>📋 Local Report:</strong> This report <u>excludes Web Assist & Cloud Assist</u> testing data.
-            All bug and sub-test-execution counts have <code>summary !~ "Web Assist"</code> and <code>summary !~ "Cloud Assist"</code> applied.
+            <strong>📋 Local Report:</strong> This report <u>excludes Web Assist</u> testing data.
+            All bug and sub-test-execution counts have <code>summary !~ "Web Assist"</code> applied.
         </div>
 
         <div class="summary-box">
@@ -2595,7 +2591,7 @@ def main():
         <div class="footer">
             <p>Generated from Jira Project: DP (DefensePro) | Version: {version}</p>
             <p><strong>Note:</strong> This is a READ-ONLY report. No Jira issues were created or modified during this analysis.</p>
-            <p><em>Web Assist & Cloud Assist data excluded. PostgreSQL automation data is optional.</em></p>
+            <p><em>Web Assist data excluded. PostgreSQL automation data is optional.</em></p>
         </div>
     </div>
 </body>
