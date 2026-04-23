@@ -689,8 +689,7 @@ def get_sub_exec_sprint_history(jira, version, sprint_list):
     base_jql = (
         f'project = DP AND fixVersion = "{version}" '
         f'AND type = "sub test execution" '
-        f'AND status != Trash '
-        f'AND summary !~ "Web Assist"'
+        f'AND status != Trash'
     )
     for sprint in sprint_list:
         s_end = sprint.get('endDate', '')[:10]
@@ -1052,7 +1051,6 @@ def get_automation_data(conn, jira, version, builds, sprint_start, sprint_end):
         AND created <= "{sprint_end[:10]}"
         AND status != Trash
         AND Origin in ("functional automation", "automation", "Functional Automation", "Automation")
-        AND summary !~ "Web Assist"
     """
     
     try:
@@ -1127,7 +1125,7 @@ def get_cross_release_distribution(jira):
     """
     print("Fetching open bugs across all active releases for distribution chart...")
     try:
-        # Single query: open bugs on any unreleased version, excluding DP Runners + Web Assist
+        # Single query: open bugs on any unreleased version, excluding DP Runners
         jql = (
             "project = DP AND issuetype = Bug "
             "AND status NOT IN (Accepted, Closed, Trash) "
@@ -1800,15 +1798,14 @@ def main():
         print(f"   This is a historical version with no active work.\n")
     
     # Get bug data - fetch ALL bugs to get accurate counts for all categories
-    print("Fetching bug data (excluding Web Assist)...")
+    print("Fetching bug data...")
     jql = (
         f'project = DP AND fixVersion = "{version}" AND type = Bug '
-        f'AND status != Trash '
-        f'AND summary !~ "Web Assist"'
+        f'AND status != Trash'
     )
     
     bugs = jira.search_issues(jql, maxResults=False, expand='changelog')
-    print(f"✓ Found {len(bugs)} bugs (Web Assist & Trash excluded)\n")
+    print(f"✓ Found {len(bugs)} bugs (Trash excluded)\n")
     
     # Get automation data
     print("Fetching automation data...")
@@ -1881,17 +1878,16 @@ def main():
     if bugs_on_qa:
         print(f"  Sample QA bug status: {bugs_on_qa[0].fields.status.name}")
     
-    # Get sub test executions - Web Assist excluded
-    print("Fetching sub test executions (excluding Web Assist)...")
+    # Get sub test executions
+    print("Fetching sub test executions...")
     sub_exec_jql = (
         f'project = DP AND fixVersion = "{version}" '
         f'AND type = "sub test execution" '
-        f'AND status != Trash '
-        f'AND summary !~ "Web Assist"'
+        f'AND status != Trash'
     )
     
     sub_execs = jira.search_issues(sub_exec_jql, maxResults=False, fields='summary,status,assignee,customfield_10001')
-    print(f"✓ Found {len(sub_execs)} sub test executions (Web Assist & Trash excluded)\n")
+    print(f"✓ Found {len(sub_execs)} sub test executions (Trash excluded)\n")
     
     # Get Xray data for sub test executions (execution rate, automation coverage)
     print("Fetching Xray data for Sub Test Executions...")

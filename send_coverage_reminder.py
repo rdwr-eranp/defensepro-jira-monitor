@@ -356,13 +356,11 @@ Examples:
         print(f"❌ Cannot connect to Jira: {exc}")
         return
 
-    # Fetch sub test executions (excluding Web Assist & Cloud Assist)
+    # Fetch sub test executions
     print(f"🔍 Fetching sub test executions for {version}...")
     sub_exec_jql = (
         f'project = DP AND fixVersion = "{version}" '
-        f'AND type = "sub test execution" '
-        f'AND summary !~ "Web Assist" '
-        f'AND summary !~ "Cloud Assist"'
+        f'AND type = "sub test execution"'
     )
     sub_execs = jira.search_issues(sub_exec_jql, maxResults=False,
                                    fields='summary,status,assignee,customfield_10129')
