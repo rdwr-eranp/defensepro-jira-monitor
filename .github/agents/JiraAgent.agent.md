@@ -19,13 +19,16 @@ project = DP
 - **Jira Cloud URL:** rwrnd.atlassian.net
 - **Authentication:** Using .env file with JIRA_URL, JIRA_EMAIL, JIRA_API_TOKEN
 - **Project:** DP (DefensePro)
-- **Current Version:** 10.12.0.0
+- **Current Version:** 10.13.0.0
 
 ### Critical Implementation Details
 
 **Field Names:**
 - Use `fixVersion` field (NOT "Release" field) when querying version information
 - Example JQL: `project = DP AND fixVersion = "10.12.0.0"`
+- `customfield_10154` = Rally Test Method (select field: Automated, Manual, Automation Candidate)
+- `customfield_10001` = Scrum Team (use `.name` to get team name)
+- "Rally FormattedID" = text field for Rally-to-Jira ID mapping (e.g., TC121875 → DP-88024)
 
 **Pagination:**
 - Use `maxResults=False` for automatic pagination when using jira-python library
@@ -42,12 +45,34 @@ When replaying issue changelogs to determine status at a specific date:
 - **Bug:** Standard bug tracking
 - **Sub Test Execution:** Test execution tracking for release validation
 
+**Antiscan Routing Exclusion:**
+- Antiscan feature is NOT supported in Routing mode
+- All report queries (unified_weekly_report.py, local_weekly_report.py) must exclude antiscan tests from Routing mode counts
+- Filter: `AND NOT (p.name LIKE '%-Routing' AND LOWER(t.name) LIKE '%antiscan%')`
+- Applies to: execution results query, available tests query, and failed tests query
+- Antiscan tests under Transparent mode are counted normally
+
+**QDoS Tests - Rally Test Method:**
+- 137 QDoS test cases were changed from "Automated" to "Manual" in `customfield_10154` (April 2026)
+- These tests still appear in test execution reports (PostgreSQL queries) — they are NOT filtered out
+- The Rally Test Method field only affects the automation rate breakdown in the sub test execution section
+- Jira keys: DP-88024 through DP-88629 (mapped from Rally IDs TC121875–TC122347)
+
+**QDoS Feature Removal (version >= 10.14.0.0):**
+- QDoS feature was removed from DefensePro starting version 10.14.0.0
+- All report queries (unified_weekly_report.py, local_weekly_report.py) exclude QDoS tests when version >= 10.14.0.0
+- Filter: `AND LOWER(t.name) NOT LIKE '%qdos%'` (applied conditionally via `_version_tuple()` comparison)
+- Applies to: initial test_id query, execution results query, available tests query, and failed tests query
+- For versions < 10.14.0.0, QDoS tests remain included as before
+
 ### Working Scripts Library
 
 **Bug Trend Analysis:**
 - `daily_release_bug_trend.py` - 90-day daily trend with Dev/QA/Closed distribution
 - `weekly_release_bug_trend.py` - 12-week weekly trend with anomaly detection
 - `weekly_work_summary.py` - Current week summary (Open Dev, Open QA, Accepted)
+- `unified_weekly_report.py` - Full weekly report with Jira + PostgreSQL data
+- `local_weekly_report.py` - Local HTML version of the weekly report
 
 **Anomaly Detection:**
 - Spike Detection: >50% increase from previous period

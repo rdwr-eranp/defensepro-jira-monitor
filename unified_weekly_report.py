@@ -746,11 +746,20 @@ def get_previous_version(version):
     return '.'.join(parts)
 
 
+def _version_tuple(version):
+    """Convert version string like '10.14.0.0' to a tuple of ints for comparison."""
+    return tuple(int(x) for x in version.split('.'))
+
+
 def get_automation_data(conn, jira, version, builds, sprint_start, sprint_end):
     """Get automation test data for the sprint period"""
     # builds are integers in the database, don't quote them
     builds_str = ','.join([b.strip() for b in builds.split(',')]) if builds else ''
     prev_version = get_previous_version(version)
+
+    # QDoS feature removed from DP starting 10.14.0.0 - exclude from all queries
+    qdos_filter = "AND LOWER(t.name) NOT LIKE '%qdos%'" if _version_tuple(version) >= (10, 14, 0, 0) else ""
+    qdos_filter_no_t = "AND LOWER(t2.name) NOT LIKE '%qdos%'" if _version_tuple(version) >= (10, 14, 0, 0) else ""
 
     # Get tests executed: prefer filtering by build number (more reliable across sprint boundaries),
     # fall back to sprint date range when no builds are known.
@@ -758,17 +767,21 @@ def get_automation_data(conn, jira, version, builds, sprint_start, sprint_end):
         tests_query = f"""
             SELECT DISTINCT te.test_id
             FROM test_execution te
+            JOIN test t2 ON te.test_id = t2.id
             WHERE te.version = '{version}'
               AND te.build IN ({builds_str})
               AND te.mode = 'regression'
+              {qdos_filter_no_t}
         """
     else:
         tests_query = f"""
             SELECT DISTINCT te.test_id
             FROM test_execution te
+            JOIN test t2 ON te.test_id = t2.id
             WHERE te.version = '{version}'
               AND te.start_time BETWEEN '{sprint_start}' AND '{sprint_end}'
               AND te.mode = 'regression'
+              {qdos_filter_no_t}
         """
     tests_df = pd.read_sql(tests_query, conn)
     test_ids = tests_df['test_id'].tolist()
@@ -834,6 +847,8 @@ def get_automation_data(conn, jira, version, builds, sprint_start, sprint_end):
               AND te.version = '{version}'
               AND te.build IN ({builds_str})
               AND te.mode = 'regression'
+              AND NOT (p.name LIKE '%-Routing' AND LOWER(t.name) LIKE '%antiscan%')
+              {qdos_filter}
         )
         SELECT test_id, test_name, platform, status, build, mode
         FROM latest_execution
@@ -901,8 +916,11 @@ def get_automation_data(conn, jira, version, builds, sprint_start, sprint_end):
         FROM test_execution te
         JOIN device d ON te.device_id = d.id
         JOIN profile p ON te.profile_id = p.id
+        JOIN test t ON te.test_id = t.id
         WHERE te.version = '{prev_version}'
           AND te.mode = 'regression'
+          AND NOT (p.name LIKE '%-Routing' AND LOWER(t.name) LIKE '%antiscan%')
+          {qdos_filter}
         GROUP BY 
                CASE 
                    WHEN d.platform IN ('UHT', 'MRQP', 'MR2') THEN 'FPGA'
@@ -1011,6 +1029,8 @@ def get_automation_data(conn, jira, version, builds, sprint_start, sprint_end):
               AND te.version = '{version}'
               AND te.build IN ({builds_str})
               AND te.mode = 'regression'
+              AND NOT (p.name LIKE '%-Routing' AND LOWER(t.name) LIKE '%antiscan%')
+              {qdos_filter}
         ),
         test_platform_status AS (
             SELECT 
