@@ -1823,10 +1823,11 @@ def main():
         'project = DP AND type = Bug '
         'AND status NOT IN (Accepted, Closed, Trash) '
         'AND fixVersion in unreleasedVersions() '
-        'AND fixVersion != "10.100.0.0"'
+        'AND fixVersion != "10.100.0.0" '
+        'AND cf[10129] != "DP Runners"'
     )
     bugs = jira.search_issues(jql, maxResults=False, expand='changelog')
-    print(f"✓ Found {len(bugs)} active bugs across all unreleased DP versions (Accepted/Closed/Trash excluded)\n")
+    print(f"✓ Found {len(bugs)} active bugs across all unreleased DP versions (Accepted/Closed/Trash/DP Runners excluded)\n")
     
     # Get automation data
     print("Fetching automation data...")
@@ -1877,6 +1878,7 @@ def main():
         f'project = DP AND type = Bug '
         f'AND fixVersion in unreleasedVersions() '
         f'AND fixVersion != "10.100.0.0" '
+        f'AND cf[10129] != "DP Runners" '
         f'AND status IN (Accepted, Closed, Done) '
         f'AND status CHANGED TO (Accepted, Closed, Done) '
         f'AFTER "{sprint_start[:10]}" '
