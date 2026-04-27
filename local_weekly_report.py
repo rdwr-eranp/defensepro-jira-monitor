@@ -1743,14 +1743,16 @@ def main():
         print(f"⚠️  WARNING: Version {version} is ARCHIVED in Jira")
         print(f"   This is a historical version with no active work.\n")
     
-    # Get bug data
-    print("Fetching bug data...")
+    # Get bug data - all active bugs across the entire DP project (not version-scoped)
+    print("Fetching bug data (all active releases)...")
     jql = (
-        f'project = DP AND fixVersion = "{version}" AND type = Bug '
-        f'AND status != Trash'
+        'project = DP AND type = Bug '
+        'AND status NOT IN (Accepted, Closed, Trash) '
+        'AND fixVersion in unreleasedVersions() '
+        'AND fixVersion != "10.100.0.0"'
     )
     bugs = jira.search_issues(jql, maxResults=False, expand='changelog')
-    print(f"✓ Found {len(bugs)} bugs (Trash excluded)\n")
+    print(f"✓ Found {len(bugs)} active bugs across all unreleased DP versions (Accepted/Closed/Trash excluded)\n")
     
     # Get automation data
     empty_automation = {
@@ -1779,7 +1781,6 @@ def main():
     # Categorize bugs based on status category and name
     bugs_on_dev = []
     bugs_on_qa = []
-    bugs_closed = []
     
     for bug in bugs:
         status_name = bug.fields.status.name.lower() if hasattr(bug.fields, 'status') else 'unknown'
@@ -1795,9 +1796,6 @@ def main():
             bugs_on_qa.append(bug)
         elif 'resolved' in status_name or 'fixed' in status_name:
             bugs_on_qa.append(bug)
-        # Closed/Done status
-        elif 'done' in status_category or 'accepted' in status_name or 'complete' in status_category:
-            bugs_closed.append(bug)
         # On Dev status
         elif 'in progress' in status_category or 'in progress' in status_name:
             bugs_on_dev.append(bug)
@@ -1810,9 +1808,24 @@ def main():
             print(f"  ⚠️  Warning: Unknown status for {bug.key}: {status_name} (category: {status_category}). Assigning to Dev.")
             bugs_on_dev.append(bug)
     
-    # Calculate bugs closed during this sprint period
+    # Fetch bugs that were closed/accepted during this sprint period (separate query)
     print("Calculating bugs closed this week...")
-    bugs_closed_this_week = get_bugs_closed_during_period(bugs, sprint_start, sprint_end)
+    closed_this_week_jql = (
+        f'project = DP AND type = Bug '
+        f'AND fixVersion in unreleasedVersions() '
+        f'AND fixVersion != "10.100.0.0" '
+        f'AND status IN (Accepted, Closed, Done) '
+        f'AND status CHANGED TO (Accepted, Closed, Done) '
+        f'AFTER "{sprint_start[:10]}" '
+        f'BEFORE "{sprint_end[:10]}"'
+    )
+    try:
+        bugs_closed_candidates = jira.search_issues(closed_this_week_jql, maxResults=False, expand='changelog')
+        bugs_closed_this_week = get_bugs_closed_during_period(bugs_closed_candidates, sprint_start, sprint_end)
+    except Exception as e:
+        print(f"  ⚠️  Could not fetch closed bugs: {e}")
+        bugs_closed_candidates = []
+        bugs_closed_this_week = []
     
     # Calculate historical trends
     print("Calculating historical bug trends...")
@@ -1827,7 +1840,8 @@ def main():
     print(f"\nBug categorization:")
     print(f"  On Dev: {len(bugs_on_dev)}")
     print(f"  On QA: {len(bugs_on_qa)}")
-    print(f"  Closed (total): {len(bugs_closed)}")
+    bugs_closed_total = len(bugs_closed_candidates)
+    print(f"  Closed (total, this sprint): {bugs_closed_total}")
     print(f"  Closed this week: {len(bugs_closed_this_week)}")
     if bugs_on_dev:
         print(f"  Sample Dev bug status: {bugs_on_dev[0].fields.status.name}")
@@ -2446,7 +2460,7 @@ def main():
             <div class="metric-card bugs">
                 <div class="metric-label">Bug Status</div>
                 <div class="metric-number">{len(bugs_on_dev) + len(bugs_on_qa)}</div>
-                <div class="metric-detail">Open: Dev {len(bugs_on_dev)} | QA {len(bugs_on_qa)}<br>Closed this week: {len(bugs_closed_this_week)} | Total: {len(bugs_closed)}</div>
+                <div class="metric-detail">Open: Dev {len(bugs_on_dev)} | QA {len(bugs_on_qa)}<br>Closed this week: {len(bugs_closed_this_week)} | Total closed (sprint): {bugs_closed_total}</div>
             </div>
             <div class="metric-card automation">
                 <div class="metric-label">Automation Tests</div>
@@ -2612,7 +2626,7 @@ def main():
     print("=" * 70)
     print("SUMMARY")
     print("=" * 70)
-    print(f"Bugs: {len(bugs_on_dev)} on Dev | {len(bugs_on_qa)} on QA | {len(bugs_closed_this_week)} closed this week | {len(bugs_closed)} total closed")
+    print(f"Bugs: {len(bugs_on_dev)} on Dev | {len(bugs_on_qa)} on QA | {len(bugs_closed_this_week)} closed this week | {bugs_closed_total} total closed (sprint)")
     print(f"Automation: {automation_data['total_tests']} tests | {automation_data['pass_ratio']:.1f}% pass ratio")
     print(f"Critical Failures: {automation_data.get('critical_failures', 0)} tests failing on all platforms")
     print(f"Sub Test Executions: {sub_exec_completed}/{len(sub_execs)} completed")
