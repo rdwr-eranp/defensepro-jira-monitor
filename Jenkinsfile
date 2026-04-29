@@ -124,6 +124,9 @@ pipeline {
                 script {
                     if (isUnix()) {
                         sh '''
+                            # Remove any stale HTML reports from the checkout so we only archive fresh ones
+                            rm -f unified_weekly_report_*.html local_weekly_report_*.html qa_bugs_report.html open_bugs_report.html
+
                             # Create virtual environment if it doesn't exist
                             if [ ! -d "venv" ]; then
                                 python3 -m venv venv
@@ -136,6 +139,12 @@ pipeline {
                         '''
                     } else {
                         bat '''
+                            REM Remove any stale HTML reports from the checkout so we only archive fresh ones
+                            del /Q unified_weekly_report_*.html 2>nul
+                            del /Q local_weekly_report_*.html 2>nul
+                            del /Q qa_bugs_report.html 2>nul
+                            del /Q open_bugs_report.html 2>nul
+
                             REM Create virtual environment if it doesn't exist
                             if not exist venv (
                                 python -m venv venv
@@ -337,11 +346,10 @@ pipeline {
         
         stage('Archive Reports') {
             steps {
-                // Archive all generated weekly reports and bug reports
-                archiveArtifacts artifacts: 'unified_weekly_report_*.html, local_weekly_report_*.html, open_bugs_report.html', 
+                // Archive only freshly generated HTML reports from this build
+                archiveArtifacts artifacts: 'unified_weekly_report_*.html, local_weekly_report_*.html, qa_bugs_report.html, open_bugs_report.html',
                                  allowEmptyArchive: true,
-                                 fingerprint: true,
-                                 onlyIfSuccessful: true
+                                 onlyIfSuccessful: false
             }
         }
         
