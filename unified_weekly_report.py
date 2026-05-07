@@ -2988,45 +2988,49 @@ def main():
     
     print(f"✓ Report saved to {output_file}\n")
 
-    # Generate PowerPoint report
-    ppt_file = output_file.replace('.html', '.pptx')
-    try:
-        report_data = {
-            'version': version,
-            'sprint_name': sprint.name,
-            'period': f"{ci_start[:10]} to {sprint_end[:10]}",
-            'ci_run_start': ci_run_start if ci_run_start else None,
-            'bugs_on_dev': len(bugs_on_dev),
-            'bugs_on_qa': len(bugs_on_qa),
-            'bugs_closed_week': len(bugs_closed_this_week),
-            'bugs_closed_total': bugs_closed_total,
-            'total_tests': automation_data['total_tests'],
-            'total_executions': automation_data['total_executions'],
-            'passed': automation_data['passed'],
-            'failed': automation_data['failed'],
-            'pass_ratio': automation_data['pass_ratio'],
-            'coverage': automation_data.get('overall_coverage', 0),
-            'critical_failures': automation_data.get('critical_failures', 0),
-            'avg_daily_rate': coverage_progress.get('avg_daily_rate') if coverage_progress else None,
-            'projected_coverage': coverage_progress.get('projected_coverage') if coverage_progress else None,
-            'bugs_on_dev_list': [{'key': b.key, 'priority': b.fields.priority.name if b.fields.priority else 'N/A', 'summary': b.fields.summary} for b in bugs_on_dev[:10]],
-            'bugs_on_qa_list': [{'key': b.key, 'priority': b.fields.priority.name if b.fields.priority else 'N/A', 'summary': b.fields.summary} for b in bugs_on_qa[:10]],
-            'sub_exec_total': len(sub_execs),
-            'sub_exec_completed': sub_exec_completed,
-            'sub_exec_in_progress': sub_exec_in_progress,
-            'sub_exec_not_started': sub_exec_not_started,
-            'xray_summary': sub_exec_xray_data.get('summary', {}),
-            'build_changelogs': build_changelogs,
-            'insights': insights,
-            'ai_insights': ai_insights,
-            'bug_trend_fig_json': fig_historical.to_json() if fig_historical else None,
-            'automation_fig_json': fig_automation.to_json() if automation_data['platform_data'] else None,
-        }
-        result = generate_ppt(report_data, ppt_file)
-        if result:
-            print(f"✓ PowerPoint saved to {ppt_file}\n")
-    except Exception as e:
-        print(f"⚠️  PPT generation failed: {e}\n")
+    # Generate PowerPoint report (only if GENERATE_PPT is set)
+    generate_ppt_flag = os.getenv('GENERATE_PPT', '').strip().lower() in ('1', 'true', 'yes')
+    if not generate_ppt_flag:
+        print("ℹ️  PPT generation skipped (set GENERATE_PPT=1 to enable)\n")
+    else:
+        ppt_file = output_file.replace('.html', '.pptx')
+        try:
+            report_data = {
+                'version': version,
+                'sprint_name': sprint.name,
+                'period': f"{ci_start[:10]} to {sprint_end[:10]}",
+                'ci_run_start': ci_run_start if ci_run_start else None,
+                'bugs_on_dev': len(bugs_on_dev),
+                'bugs_on_qa': len(bugs_on_qa),
+                'bugs_closed_week': len(bugs_closed_this_week),
+                'bugs_closed_total': bugs_closed_total,
+                'total_tests': automation_data['total_tests'],
+                'total_executions': automation_data['total_executions'],
+                'passed': automation_data['passed'],
+                'failed': automation_data['failed'],
+                'pass_ratio': automation_data['pass_ratio'],
+                'coverage': automation_data.get('overall_coverage', 0),
+                'critical_failures': automation_data.get('critical_failures', 0),
+                'avg_daily_rate': coverage_progress.get('avg_daily_rate') if coverage_progress else None,
+                'projected_coverage': coverage_progress.get('projected_coverage') if coverage_progress else None,
+                'bugs_on_dev_list': [{'key': b.key, 'priority': b.fields.priority.name if b.fields.priority else 'N/A', 'summary': b.fields.summary} for b in bugs_on_dev[:10]],
+                'bugs_on_qa_list': [{'key': b.key, 'priority': b.fields.priority.name if b.fields.priority else 'N/A', 'summary': b.fields.summary} for b in bugs_on_qa[:10]],
+                'sub_exec_total': len(sub_execs),
+                'sub_exec_completed': sub_exec_completed,
+                'sub_exec_in_progress': sub_exec_in_progress,
+                'sub_exec_not_started': sub_exec_not_started,
+                'xray_summary': sub_exec_xray_data.get('summary', {}),
+                'build_changelogs': build_changelogs,
+                'insights': insights,
+                'ai_insights': ai_insights,
+                'bug_trend_fig_json': fig_historical.to_json() if fig_historical else None,
+                'automation_fig_json': fig_automation.to_json() if automation_data['platform_data'] else None,
+            }
+            result = generate_ppt(report_data, ppt_file)
+            if result:
+                print(f"✓ PowerPoint saved to {ppt_file}\n")
+        except Exception as e:
+            print(f"⚠️  PPT generation failed: {e}\n")
     
     # Print summary
     print("=" * 70)

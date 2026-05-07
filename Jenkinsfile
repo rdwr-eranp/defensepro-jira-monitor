@@ -66,6 +66,11 @@ pipeline {
             defaultValue: false,
             description: 'Skip AI-powered insights generation (faster run, useful for debugging).'
         )
+        booleanParam(
+            name: 'GENERATE_PPT',
+            defaultValue: false,
+            description: 'Generate a PowerPoint (.pptx) report alongside the HTML report.'
+        )
     }
     
     stages {
@@ -95,6 +100,7 @@ pipeline {
 
                     // Misc flags
                     env.SKIP_AI_INSIGHTS_FLAG = params.SKIP_AI_INSIGHTS ? '1' : ''
+                    env.GENERATE_PPT_FLAG     = params.GENERATE_PPT ? '1' : ''
                     env.REPORT_TYPE           = params.REPORT_TYPE ?: 'unified'
                     env.EMAIL_RECIPIENTS      = params.EMAIL_RECIPIENTS?.trim() ?: 'eranp@radware.com'
 
@@ -202,6 +208,10 @@ pipeline {
                     if (env.SKIP_AI_INSIGHTS_FLAG) {
                         extraUnix += "export SKIP_AI_INSIGHTS=1\n"
                         extraBat  += "set SKIP_AI_INSIGHTS=1\n"
+                    }
+                    if (env.GENERATE_PPT_FLAG) {
+                        extraUnix += "export GENERATE_PPT=1\n"
+                        extraBat  += "set GENERATE_PPT=1\n"
                     }
 
                     try {
