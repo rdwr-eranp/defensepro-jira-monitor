@@ -1770,22 +1770,49 @@ def get_coverage_progress(conn, version, ci_run_start):
         # Build daily progress list
         days = []
         prev_cum = 0
-        for _, row in cumulative_df.iterrows():
+        cumulative_passed = 0
+        cumulative_failed = 0
+        for i, row in cumulative_df.iterrows():
             cum = int(row['cumulative_pt_tests'])
             delta = cum - prev_cum
             coverage_pct = cum / baseline_total * 100
             daily_add_pct = delta / baseline_total * 100
+
+            # Get pass/fail for this day from daily_df
+            date_str = str(row['run_date'])
+            day_row = daily_df[daily_df['run_date'].astype(str) == date_str]
+            if not day_row.empty:
+                day_passed = int(day_row['passed'].iloc[0] or 0)
+                day_failed = int(day_row['failed'].iloc[0] or 0)
+            else:
+                day_passed = 0
+                day_failed = 0
+
+            cumulative_passed += day_passed
+            cumulative_failed += day_failed
+            cumulative_total = cumulative_passed + cumulative_failed
+            cum_pass_ratio = (cumulative_passed / cumulative_total * 100) if cumulative_total > 0 else 0
+            day_total = day_passed + day_failed
+            day_pass_ratio = (day_passed / day_total * 100) if day_total > 0 else 0
+
             days.append({
-                'date': str(row['run_date']),
+                'date': date_str,
                 'cumulative_tests': cum,
                 'new_tests': delta,
                 'coverage_pct': round(coverage_pct, 1),
                 'daily_add_pct': round(daily_add_pct, 1),
+                'day_passed': day_passed,
+                'day_failed': day_failed,
+                'day_pass_ratio': round(day_pass_ratio, 1),
+                'cumulative_passed': cumulative_passed,
+                'cumulative_failed': cumulative_failed,
+                'cumulative_pass_ratio': round(cum_pass_ratio, 1),
             })
             prev_cum = cum
 
         # Calculate estimation
         current_coverage = days[-1]['coverage_pct'] if days else 0
+        current_pass_ratio = days[-1]['cumulative_pass_ratio'] if days else 0
         remaining = 100.0 - current_coverage
 
         # Use average of full days only (exclude today if partial)
@@ -1808,6 +1835,7 @@ def get_coverage_progress(conn, version, ci_run_start):
             'prev_version': prev_version,
             'days': days,
             'current_coverage': current_coverage,
+            'current_pass_ratio': current_pass_ratio,
             'remaining': round(remaining, 1),
             'avg_daily_rate': round(avg_daily_rate, 1),
             'days_to_complete': int(days_to_complete) + 1 if days_to_complete else None,
@@ -1829,19 +1857,26 @@ def generate_coverage_progress_html(progress_data):
     if not days:
         return ''
 
-    # Progress bar
-    current = progress_data['current_coverage']
-    bar_color = '#1565c0' if current < 70 else '#1976d2' if current < 90 else '#0d47a1'
+    # Progress bars
+    current_cov = progress_data['current_coverage']
+    current_pr = progress_data.get('current_pass_ratio', 0)
+    cov_bar_color = '#1565c0' if current_cov < 70 else '#1976d2' if current_cov < 90 else '#0d47a1'
+    pr_bar_color = '#4caf50' if current_pr >= 90 else '#ff9800' if current_pr >= 70 else '#f44336'
 
     # Daily breakdown table rows
     table_rows = ''
     for d in days:
+        pr_color = '#4caf50' if d['cumulative_pass_ratio'] >= 90 else '#ff9800' if d['cumulative_pass_ratio'] >= 70 else '#f44336'
         table_rows += (
             f'<tr><td>{d["date"]}</td>'
             f'<td style="text-align:center;">{d["cumulative_tests"]:,}</td>'
             f'<td style="text-align:center;">+{d["new_tests"]:,}</td>'
             f'<td style="text-align:center; color:#1565c0; font-weight:bold;">{d["coverage_pct"]:.1f}%</td>'
-            f'<td style="text-align:center;">+{d["daily_add_pct"]:.1f}%</td></tr>'
+            f'<td style="text-align:center;">+{d["daily_add_pct"]:.1f}%</td>'
+            f'<td style="text-align:center;">{d["day_passed"]:,}</td>'
+            f'<td style="text-align:center;">{d["day_failed"]:,}</td>'
+            f'<td style="text-align:center; color:{pr_color}; font-weight:bold;">{d["cumulative_pass_ratio"]:.1f}%</td>'
+            f'</tr>'
         )
 
     # Estimation text
@@ -1852,7 +1887,7 @@ def generate_coverage_progress_html(progress_data):
             f'<strong>{progress_data["avg_daily_rate"]:.1f}%/day</strong>, '
             f'100% coverage expected in <strong>~{progress_data["days_to_complete"]} days</strong> '
             f'(estimated <strong>{progress_data["estimated_date"]}</strong>). '
-            f'Elapsed: {progress_data["total_days_elapsed"]} days since CI run start ({progress_data["ci_run_start"]}).'
+            f'Elapsed: {progress_data["total_days_elapsed"]} days since {progress_data["ci_run_start"]}.'
             f'</div>'
         )
     else:
@@ -1860,14 +1895,24 @@ def generate_coverage_progress_html(progress_data):
 
     progress_html = (
         f'<h3>\U0001f4ca CI Coverage Progress & Completion Estimation</h3>'
-        f'<p><strong>CI Run Start:</strong> {progress_data["ci_run_start"]} | '
+        f'<p><strong>Start Date:</strong> {progress_data["ci_run_start"]} | '
         f'<strong>Baseline ({progress_data["prev_version"]}):</strong> {progress_data["baseline_total"]:,} test/platform/mode combinations</p>'
-        f'<div style="background: #e0e0e0; border-radius: 8px; overflow: hidden; height: 30px; margin: 15px 0; position: relative;">'
-        f'<div style="background: {bar_color}; height: 100%; width: {min(current, 100):.1f}%; transition: width 0.5s;"></div>'
-        f'<span style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); font-weight: bold; color: {"white" if current > 50 else "#333"};">{current:.1f}% Coverage</span>'
+        f'<div style="display: flex; gap: 20px; margin: 15px 0;">'
+        f'<div style="flex:1;">'
+        f'<div style="font-size:12px; color:#666; margin-bottom:4px;">Coverage</div>'
+        f'<div style="background: #e0e0e0; border-radius: 8px; overflow: hidden; height: 28px; position: relative;">'
+        f'<div style="background: {cov_bar_color}; height: 100%; width: {min(current_cov, 100):.1f}%;"></div>'
+        f'<span style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); font-weight: bold; color: {"white" if current_cov > 50 else "#333"}; font-size:13px;">{current_cov:.1f}%</span>'
+        f'</div></div>'
+        f'<div style="flex:1;">'
+        f'<div style="font-size:12px; color:#666; margin-bottom:4px;">Pass Ratio (cumulative)</div>'
+        f'<div style="background: #e0e0e0; border-radius: 8px; overflow: hidden; height: 28px; position: relative;">'
+        f'<div style="background: {pr_bar_color}; height: 100%; width: {min(current_pr, 100):.1f}%;"></div>'
+        f'<span style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); font-weight: bold; color: {"white" if current_pr > 50 else "#333"}; font-size:13px;">{current_pr:.1f}%</span>'
+        f'</div></div>'
         f'</div>'
         f'{est_html}'
-        f'<table><thead><tr><th>Date</th><th>Cumulative Tests</th><th>New Today</th><th>Coverage</th><th>Daily Addition</th></tr></thead>'
+        f'<table><thead><tr><th>Date</th><th>Cumulative Tests</th><th>New Today</th><th>Coverage</th><th>Daily Add</th><th>Passed</th><th>Failed</th><th>Cum. Pass Ratio</th></tr></thead>'
         f'<tbody>{table_rows}</tbody></table>'
     )
     return progress_html
@@ -1963,11 +2008,14 @@ def main():
         print("⚠️  Skipping automation data (no DB connection or no builds)\n")
         automation_data = empty_automation
 
-    # Coverage progress & estimation (requires CI_RUN_START)
+    # Coverage progress & estimation
+    # Use CI_RUN_START if specified, otherwise fall back to sprint start date
     coverage_progress = None
-    if ci_run_start and conn:
-        print(f"Calculating coverage progress since CI run start ({ci_run_start})...")
-        coverage_progress = get_coverage_progress(conn, version, ci_run_start)
+    progress_start_date = ci_run_start if ci_run_start else sprint_start[:10]
+    if conn and progress_start_date:
+        print(f"Calculating coverage progress since {progress_start_date} "
+              f"({'CI_RUN_START' if ci_run_start else 'sprint start'})...")
+        coverage_progress = get_coverage_progress(conn, version, progress_start_date)
         if coverage_progress:
             print(f"✓ Coverage progress: {coverage_progress['current_coverage']:.1f}% "
                   f"(avg {coverage_progress['avg_daily_rate']:.1f}%/day, "
