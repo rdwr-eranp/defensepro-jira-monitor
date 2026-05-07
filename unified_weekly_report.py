@@ -904,6 +904,98 @@ def get_coverage_progress(conn, version, ci_run_start):
         return None
 
 
+def get_build_changelogs(builds_str):
+    """
+    Fetch changelogs (commit messages) from Jenkins for each build number.
+    Requires JENKINS_BUILD_URL, JENKINS_BUILD_JOB, JENKINS_BUILD_USER, JENKINS_BUILD_TOKEN in .env.
+    Returns a list of dicts: [{build, changes: [{msg, author, date, commitId}]}]
+    """
+    jenkins_url = os.getenv('JENKINS_BUILD_URL', '').strip().rstrip('/')
+    jenkins_job = os.getenv('JENKINS_BUILD_JOB', '').strip()
+    jenkins_user = os.getenv('JENKINS_BUILD_USER', '').strip()
+    jenkins_token = os.getenv('JENKINS_BUILD_TOKEN', '').strip()
+
+    if not jenkins_url or not jenkins_job:
+        return None
+
+    if not builds_str:
+        return None
+
+    build_numbers = [b.strip() for b in builds_str.split(',') if b.strip()]
+    auth = (jenkins_user, jenkins_token) if jenkins_user and jenkins_token else None
+
+    results = []
+    for build_num in build_numbers:
+        try:
+            url = f"{jenkins_url}/job/{jenkins_job}/{build_num}/api/json"
+            params = {'tree': 'changeSet[items[msg,author[fullName],date,commitId]],timestamp,result,displayName'}
+            resp = requests.get(url, params=params, auth=auth, timeout=15, verify=False)
+            if resp.status_code != 200:
+                continue
+            data = resp.json()
+            changes = []
+            change_set = data.get('changeSet', {})
+            items = change_set.get('items', []) if change_set else []
+            for item in items:
+                changes.append({
+                    'msg': item.get('msg', '').split('\n')[0][:120],  # first line, max 120 chars
+                    'author': item.get('author', {}).get('fullName', 'Unknown'),
+                    'commitId': item.get('commitId', '')[:8],
+                })
+            build_info = {
+                'build': build_num,
+                'displayName': data.get('displayName', f'#{build_num}'),
+                'result': data.get('result', 'N/A'),
+                'timestamp': data.get('timestamp'),
+                'changes': changes,
+            }
+            results.append(build_info)
+        except Exception as e:
+            print(f"   ⚠️ Failed to fetch changelog for build {build_num}: {e}")
+            continue
+
+    return results if results else None
+
+
+def generate_build_changelog_html(build_changelogs):
+    """Generate HTML section for build changelogs."""
+    if not build_changelogs:
+        return ""
+
+    total_changes = sum(len(b['changes']) for b in build_changelogs)
+    if total_changes == 0:
+        return ""
+
+    html = '''
+    <div style="background: #f3e5f5; border-left: 5px solid #7b1fa2; padding: 20px; margin: 20px 0; border-radius: 5px;">
+        <h3 style="margin-top: 0; color: #7b1fa2;">🔧 Build Changes in CI Cycle</h3>
+        <p style="font-size: 13px; color: #555;">'''
+    html += f'{total_changes} change(s) across {len(build_changelogs)} build(s)</p>'
+
+    for build in build_changelogs:
+        ts = ''
+        if build.get('timestamp'):
+            ts = datetime.fromtimestamp(build['timestamp'] / 1000).strftime('%Y-%m-%d %H:%M')
+        result_color = '#4caf50' if build['result'] == 'SUCCESS' else '#f44336' if build['result'] == 'FAILURE' else '#ff9800'
+        html += f'<details style="margin: 8px 0;"><summary style="cursor: pointer; font-weight: bold;">'
+        html += f'Build {build["displayName"]} <span style="color: {result_color};">({build["result"]})</span>'
+        if ts:
+            html += f' - {ts}'
+        html += f' — {len(build["changes"])} change(s)</summary>'
+        if build['changes']:
+            html += '<ul style="margin: 5px 0; font-size: 13px;">'
+            for c in build['changes']:
+                commit_msg = c["msg"].replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+                author_name = c["author"].replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+                html += f'<li><code>{c["commitId"]}</code> {commit_msg} <em>({author_name})</em></li>'
+            html += '</ul>'
+        else:
+            html += '<p style="font-size: 13px; color: #888; margin: 5px 0 5px 20px;">No changes recorded</p>'
+        html += '</details>'
+    html += '</div>'
+    return html
+
+
 def get_automation_data(conn, jira, version, builds, sprint_start, sprint_end):
     """Get automation test data for the sprint period"""
     # builds are integers in the database, don't quote them
@@ -2005,6 +2097,17 @@ def main():
         else:
             print("⚠️  No coverage progress data available\n")
 
+    # Fetch build changelogs from Jenkins (if configured)
+    build_changelogs = None
+    if builds and ci_run_start:
+        print("Fetching build changelogs from Jenkins...")
+        build_changelogs = get_build_changelogs(builds)
+        if build_changelogs:
+            total_changes = sum(len(b['changes']) for b in build_changelogs)
+            print(f"✓ Found {total_changes} change(s) across {len(build_changelogs)} builds\n")
+        else:
+            print("⚠️  Build changelogs not available (JENKINS_BUILD_URL/JOB not configured)\n")
+
     # Fetch previous sprints for trend analysis
     print("Fetching sprint list for trend history...")
     sprint_list = get_sprint_list(jira, n_closed=4)
@@ -2658,6 +2761,9 @@ def main():
                 <tbody>''' + ''.join([f'<tr><td>{d["date"]}</td><td>{d["cumulative_tests"]:,}</td><td>+{d["new_tests"]:,}</td><td>{d["coverage_pct"]}%</td><td>+{d["daily_add_pct"]}%</td><td>{d["day_passed"]:,}</td><td>{d["day_failed"]:,}</td><td>{d["cumulative_pass_ratio"]}%</td></tr>' for d in cp['days']]) + f'''</tbody>
             </table>
         </div>'''
+
+    # Build changelog HTML
+    build_changelog_html = generate_build_changelog_html(build_changelogs)
     
     html_content = f"""<!DOCTYPE html>
 <html>
@@ -2734,6 +2840,8 @@ def main():
         {'<p><strong>Test Coverage:</strong> Overall: ' + f"{automation_data.get('overall_coverage', 0):.1f}%" + '</p>' if automation_data.get('overall_coverage', 0) > 0 else ''}
         
         {coverage_progress_html}
+        
+        {build_changelog_html}
         
         {automation_chart_html}
         
