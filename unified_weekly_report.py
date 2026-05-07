@@ -2104,7 +2104,7 @@ def main():
 
     # Fetch build changelogs from Jenkins (if configured)
     build_changelogs = None
-    if builds and ci_run_start:
+    if builds:
         print("Fetching build changelogs from Jenkins...")
         build_changelogs = get_build_changelogs(builds)
         if build_changelogs:

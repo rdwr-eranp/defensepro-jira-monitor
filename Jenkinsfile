@@ -209,13 +209,18 @@ pipeline {
                             string(credentialsId: 'jira-url', variable: 'JIRA_URL'),
                             string(credentialsId: 'jira-email', variable: 'JIRA_EMAIL'),
                             string(credentialsId: 'jira-api-token', variable: 'JIRA_API_TOKEN'),
-                            string(credentialsId: 'pg-password', variable: 'PG_PASSWORD')
+                            string(credentialsId: 'pg-password', variable: 'PG_PASSWORD'),
+                            string(credentialsId: 'jenkins-build-token', variable: 'JENKINS_BUILD_TOKEN')
                         ]) {
                             if (isUnix()) {
                                 sh """
                                     . venv/bin/activate
                                     export VERSION=${env.VERSION}
                                     export GITHUB_TOKEN='${env.GITHUB_TOKEN}'
+                                    export JENKINS_BUILD_URL='http://10.27.11.99:8081'
+                                    export JENKINS_BUILD_JOB='DP_${env.VERSION}'
+                                    export JENKINS_BUILD_USER='eranp'
+                                    export JENKINS_BUILD_TOKEN='${JENKINS_BUILD_TOKEN}'
                                     ${extraUnix}
                                     python3 unified_weekly_report.py
                                 """
@@ -224,6 +229,10 @@ pipeline {
                                     call venv\\Scripts\\activate.bat
                                     set VERSION=${env.VERSION}
                                     set GITHUB_TOKEN=${env.GITHUB_TOKEN}
+                                    set JENKINS_BUILD_URL=http://10.27.11.99:8081
+                                    set JENKINS_BUILD_JOB=DP_${env.VERSION}
+                                    set JENKINS_BUILD_USER=eranp
+                                    set JENKINS_BUILD_TOKEN=${JENKINS_BUILD_TOKEN}
                                     ${extraBat}
                                     python unified_weekly_report.py
                                 """
@@ -237,6 +246,7 @@ pipeline {
                                 . venv/bin/activate
                                 export VERSION=${env.VERSION}
                                 export GITHUB_TOKEN='${env.GITHUB_TOKEN}'
+                                export JENKINS_BUILD_JOB='DP_${env.VERSION}'
                                 ${extraUnix}
                                 if [ -f .env ]; then
                                     echo "Found .env file, loading environment variables..."
@@ -255,6 +265,7 @@ pipeline {
                                 call venv\\Scripts\\activate.bat
                                 set VERSION=${env.VERSION}
                                 set GITHUB_TOKEN=${env.GITHUB_TOKEN}
+                                set JENKINS_BUILD_JOB=DP_${env.VERSION}
                                 ${extraBat}
                                 if exist .env (
                                     echo Found .env file, loading environment variables...
