@@ -382,7 +382,7 @@ pipeline {
         stage('Archive Reports') {
             steps {
                 // Archive only freshly generated HTML reports from this build
-                archiveArtifacts artifacts: 'unified_weekly_report_*.html, local_weekly_report_*.html, qa_bugs_report.html, open_bugs_report.html',
+                archiveArtifacts artifacts: 'unified_weekly_report_*.html, unified_weekly_report_*.pptx, local_weekly_report_*.html, qa_bugs_report.html, open_bugs_report.html',
                                  allowEmptyArchive: true,
                                  onlyIfSuccessful: false
             }
