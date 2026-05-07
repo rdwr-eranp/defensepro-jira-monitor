@@ -751,6 +751,159 @@ def _version_tuple(version):
     return tuple(int(x) for x in version.split('.'))
 
 
+def get_coverage_progress(conn, version, ci_run_start):
+    """
+    Calculate daily cumulative coverage progress since CI run start date.
+    Returns a dict with daily breakdown, pass ratio, and completion estimation.
+    """
+    if not conn or not ci_run_start:
+        return None
+
+    prev_version = get_previous_version(version)
+    qdos_filter = "AND LOWER(t.name) NOT LIKE '%qdos%'" if _version_tuple(version) >= (10, 14, 0, 0) else ""
+
+    try:
+        baseline_query = f"""
+            SELECT 
+                CASE WHEN d.platform IN ('UHT','MRQP','MR2') THEN 'FPGA'
+                     WHEN d.platform IN ('ESXI','KVM','VL3','HT2') THEN 'Software'
+                     WHEN d.platform IN ('MRQ_X','MRQX') THEN 'EZchip' ELSE 'Other' END as platform_type,
+                CASE WHEN p.name LIKE '%-Routing' THEN 'Routing' ELSE 'Transparent' END as mode,
+                COUNT(DISTINCT te.test_id) as available_tests
+            FROM test_execution te
+            JOIN device d ON te.device_id = d.id
+            JOIN profile p ON te.profile_id = p.id
+            JOIN test t ON te.test_id = t.id
+            WHERE te.version = '{prev_version}' AND te.mode = 'regression'
+              AND NOT (p.name LIKE '%-Routing' AND LOWER(t.name) LIKE '%antiscan%')
+              {qdos_filter}
+            GROUP BY 1, 2
+        """
+        baseline_df = pd.read_sql(baseline_query, conn)
+        baseline_total = baseline_df[baseline_df['platform_type'] != 'Other']['available_tests'].sum()
+
+        if baseline_total == 0:
+            return None
+
+        daily_query = f"""
+            SELECT te.start_time::date as run_date,
+                   COUNT(DISTINCT te.test_id) as unique_tests,
+                   COUNT(*) as total_executions,
+                   SUM(CASE WHEN LOWER(te.status) = 'passed' THEN 1 ELSE 0 END) as passed,
+                   SUM(CASE WHEN LOWER(te.status) IN ('failed','error','fail') THEN 1 ELSE 0 END) as failed
+            FROM test_execution te
+            JOIN test t ON te.test_id = t.id
+            WHERE te.version = '{version}' AND te.mode = 'regression'
+              AND te.start_time >= '{ci_run_start}'
+              {qdos_filter}
+            GROUP BY te.start_time::date
+            ORDER BY run_date
+        """
+        daily_df = pd.read_sql(daily_query, conn)
+
+        if daily_df.empty:
+            return None
+
+        cumulative_query = f"""
+            SELECT d.run_date, COUNT(DISTINCT sub.test_id || '-' || sub.platform_type || '-' || sub.mode) as cumulative_pt_tests
+            FROM (SELECT DISTINCT start_time::date as run_date FROM test_execution
+                  WHERE version = '{version}' AND mode = 'regression'
+                  AND start_time >= '{ci_run_start}') d
+            CROSS JOIN LATERAL (
+                SELECT DISTINCT te.test_id,
+                    CASE WHEN dev.platform IN ('UHT','MRQP','MR2') THEN 'FPGA'
+                         WHEN dev.platform IN ('ESXI','KVM','VL3','HT2') THEN 'Software'
+                         WHEN dev.platform IN ('MRQ_X','MRQX') THEN 'EZchip' ELSE 'Other' END as platform_type,
+                    CASE WHEN p.name LIKE '%-Routing' THEN 'Routing' ELSE 'Transparent' END as mode
+                FROM test_execution te
+                JOIN device dev ON te.device_id = dev.id
+                JOIN profile p ON te.profile_id = p.id
+                JOIN test t ON te.test_id = t.id
+                WHERE te.version = '{version}' AND te.mode = 'regression'
+                  AND te.start_time >= '{ci_run_start}'
+                  AND te.start_time < (d.run_date + interval '1 day')
+                  AND NOT (p.name LIKE '%-Routing' AND LOWER(t.name) LIKE '%antiscan%')
+                  {qdos_filter}
+                  AND dev.platform IN ('UHT','MRQP','MR2','ESXI','KVM','VL3','HT2','MRQ_X','MRQX')
+            ) sub
+            GROUP BY d.run_date ORDER BY d.run_date
+        """
+        cumulative_df = pd.read_sql(cumulative_query, conn)
+
+        if cumulative_df.empty:
+            return None
+
+        days = []
+        prev_cum = 0
+        cumulative_passed = 0
+        cumulative_failed = 0
+        for i, row in cumulative_df.iterrows():
+            cum = int(row['cumulative_pt_tests'])
+            delta = cum - prev_cum
+            coverage_pct = cum / baseline_total * 100
+            daily_add_pct = delta / baseline_total * 100
+
+            date_str = str(row['run_date'])
+            day_row = daily_df[daily_df['run_date'].astype(str) == date_str]
+            if not day_row.empty:
+                day_passed = int(day_row['passed'].iloc[0] or 0)
+                day_failed = int(day_row['failed'].iloc[0] or 0)
+            else:
+                day_passed = 0
+                day_failed = 0
+
+            cumulative_passed += day_passed
+            cumulative_failed += day_failed
+            cumulative_total = cumulative_passed + cumulative_failed
+            cum_pass_ratio = (cumulative_passed / cumulative_total * 100) if cumulative_total > 0 else 0
+
+            days.append({
+                'date': date_str,
+                'cumulative_tests': cum,
+                'new_tests': delta,
+                'coverage_pct': round(coverage_pct, 1),
+                'daily_add_pct': round(daily_add_pct, 1),
+                'day_passed': day_passed,
+                'day_failed': day_failed,
+                'cumulative_pass_ratio': round(cum_pass_ratio, 1),
+            })
+            prev_cum = cum
+
+        current_coverage = days[-1]['coverage_pct'] if days else 0
+        current_pass_ratio = days[-1]['cumulative_pass_ratio'] if days else 0
+        remaining = 100.0 - current_coverage
+
+        full_days = days[:-1] if len(days) > 1 else days
+        if full_days:
+            avg_daily_rate = sum(d['daily_add_pct'] for d in full_days) / len(full_days)
+        else:
+            avg_daily_rate = days[0]['daily_add_pct'] if days else 0
+
+        if avg_daily_rate > 0:
+            days_to_complete = remaining / avg_daily_rate
+            estimated_date = datetime.now() + timedelta(days=int(days_to_complete) + 1)
+        else:
+            days_to_complete = None
+            estimated_date = None
+
+        return {
+            'ci_run_start': ci_run_start,
+            'baseline_total': int(baseline_total),
+            'prev_version': prev_version,
+            'days': days,
+            'current_coverage': current_coverage,
+            'current_pass_ratio': current_pass_ratio,
+            'remaining': round(remaining, 1),
+            'avg_daily_rate': round(avg_daily_rate, 1),
+            'days_to_complete': int(days_to_complete) + 1 if days_to_complete else None,
+            'estimated_date': estimated_date.strftime('%Y-%m-%d') if estimated_date else None,
+            'total_days_elapsed': len(days),
+        }
+    except Exception as e:
+        print(f"   ⚠️ Coverage progress query failed: {e}")
+        return None
+
+
 def get_automation_data(conn, jira, version, builds, sprint_start, sprint_end):
     """Get automation test data for the sprint period"""
     # builds are integers in the database, don't quote them
@@ -1840,6 +1993,18 @@ def main():
     automation_data = get_automation_data(conn, jira, version, builds, ci_start, sprint_end)
     print(f"✓ Found {automation_data['total_tests']} tests with {automation_data['total_executions']} executions\n")
 
+    # Get coverage progress and velocity (only when CI_RUN_START is set)
+    coverage_progress = None
+    if ci_run_start:
+        print(f"Fetching CI coverage progress from {ci_run_start}...")
+        coverage_progress = get_coverage_progress(conn, version, ci_run_start)
+        if coverage_progress:
+            print(f"✓ Coverage progress: {coverage_progress['current_coverage']}% coverage, "
+                  f"{coverage_progress['current_pass_ratio']}% pass ratio, "
+                  f"avg {coverage_progress['avg_daily_rate']}%/day\n")
+        else:
+            print("⚠️  No coverage progress data available\n")
+
     # Fetch previous sprints for trend analysis
     print("Fetching sprint list for trend history...")
     sprint_list = get_sprint_list(jira, n_closed=4)
@@ -2448,6 +2613,39 @@ def main():
             <strong>⚠️ Historical Version:</strong> Version {version} is marked as {status_text} in Jira.
             This report shows historical data. For current sprint work, use an active/unreleased version.
         </div>'''
+
+    # Build CI coverage progress HTML
+    coverage_progress_html = ""
+    if coverage_progress:
+        cp = coverage_progress
+        # Estimation banner
+        est_text = f"Estimated full coverage by <strong>{cp['estimated_date']}</strong> ({cp['days_to_complete']} days remaining)" if cp['estimated_date'] else "Insufficient data to estimate completion"
+        # Progress bar color for pass ratio
+        pr_color = '#4caf50' if cp['current_pass_ratio'] >= 90 else '#ff9800' if cp['current_pass_ratio'] >= 75 else '#f44336'
+        coverage_progress_html = f'''
+        <div style="background: #e3f2fd; border-left: 5px solid #1565c0; padding: 20px; margin: 20px 0; border-radius: 5px;">
+            <h3 style="margin-top: 0; color: #1565c0;">📈 CI Coverage Progress & Velocity</h3>
+            <p><strong>CI Start Date:</strong> {cp["ci_run_start"]} | <strong>Days Elapsed:</strong> {cp["total_days_elapsed"]} | <strong>Baseline:</strong> {cp["baseline_total"]:,} tests (from {cp["prev_version"]})</p>
+            <div style="display: flex; gap: 30px; margin: 15px 0;">
+                <div style="flex: 1;">
+                    <p style="margin: 5px 0; font-size: 13px;"><strong>Coverage:</strong> {cp["current_coverage"]}%</p>
+                    <div style="background: #e0e0e0; border-radius: 10px; height: 20px; overflow: hidden;">
+                        <div style="background: #1976d2; height: 100%; width: {min(cp["current_coverage"], 100)}%; border-radius: 10px;"></div>
+                    </div>
+                </div>
+                <div style="flex: 1;">
+                    <p style="margin: 5px 0; font-size: 13px;"><strong>Pass Ratio:</strong> {cp["current_pass_ratio"]}%</p>
+                    <div style="background: #e0e0e0; border-radius: 10px; height: 20px; overflow: hidden;">
+                        <div style="background: {pr_color}; height: 100%; width: {min(cp["current_pass_ratio"], 100)}%; border-radius: 10px;"></div>
+                    </div>
+                </div>
+            </div>
+            <p style="margin: 10px 0; font-size: 14px;">⚡ <strong>Avg Velocity:</strong> {cp["avg_daily_rate"]}%/day | {est_text}</p>
+            <table style="font-size: 13px; margin-top: 10px;">
+                <thead><tr><th>Date</th><th>Cumulative Tests</th><th>New Today</th><th>Coverage</th><th>Daily Add</th><th>Passed</th><th>Failed</th><th>Cum. Pass Ratio</th></tr></thead>
+                <tbody>''' + ''.join([f'<tr><td>{d["date"]}</td><td>{d["cumulative_tests"]:,}</td><td>+{d["new_tests"]:,}</td><td>{d["coverage_pct"]}%</td><td>+{d["daily_add_pct"]}%</td><td>{d["day_passed"]:,}</td><td>{d["day_failed"]:,}</td><td>{d["cumulative_pass_ratio"]}%</td></tr>' for d in cp['days']]) + f'''</tbody>
+            </table>
+        </div>'''
     
     html_content = f"""<!DOCTYPE html>
 <html>
@@ -2490,6 +2688,7 @@ def main():
         <div class="metadata">
             <strong>Sprint:</strong> {sprint.name}<br>
             <strong>Period:</strong> {sprint_start[:10]} to {sprint_end[:10]}<br>
+            {'<strong>CI Run Start:</strong> ' + ci_run_start + '<br>' if ci_run_start else ''}
             <strong>Version Status:</strong> {'✓ Active (Unreleased)' if version_info['is_active'] else '⚠️ Released/Archived'}<br>
             <strong>Report Generated:</strong> {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
         </div>
@@ -2521,6 +2720,8 @@ def main():
         <p><strong>Tests executed during sprint:</strong> {automation_data['total_tests']} unique tests, {automation_data['total_executions']} total executions</p>
         <p><strong>Overall results:</strong> Passed: {automation_data['passed']} | Failed: {automation_data['failed']} | Pass Ratio: {automation_data['pass_ratio']:.1f}%</p>
         {'<p><strong>Test Coverage:</strong> Overall: ' + f"{automation_data.get('overall_coverage', 0):.1f}%" + '</p>' if automation_data.get('overall_coverage', 0) > 0 else ''}
+        
+        {coverage_progress_html}
         
         {automation_chart_html}
         
