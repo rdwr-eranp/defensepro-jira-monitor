@@ -209,8 +209,7 @@ pipeline {
                             string(credentialsId: 'jira-url', variable: 'JIRA_URL'),
                             string(credentialsId: 'jira-email', variable: 'JIRA_EMAIL'),
                             string(credentialsId: 'jira-api-token', variable: 'JIRA_API_TOKEN'),
-                            string(credentialsId: 'pg-password', variable: 'PG_PASSWORD'),
-                            string(credentialsId: 'jenkins-build-token', variable: 'JENKINS_BUILD_TOKEN')
+                            string(credentialsId: 'pg-password', variable: 'PG_PASSWORD')
                         ]) {
                             if (isUnix()) {
                                 sh """
@@ -220,7 +219,7 @@ pipeline {
                                     export JENKINS_BUILD_URL='http://10.27.11.99:8081'
                                     export JENKINS_BUILD_JOB='DP_${env.VERSION}'
                                     export JENKINS_BUILD_USER='eranp'
-                                    export JENKINS_BUILD_TOKEN='${JENKINS_BUILD_TOKEN}'
+                                    export JENKINS_BUILD_TOKEN='114e579ff6f2cac68e2d0f6f20809b19df'
                                     ${extraUnix}
                                     python3 unified_weekly_report.py
                                 """
@@ -232,7 +231,7 @@ pipeline {
                                     set JENKINS_BUILD_URL=http://10.27.11.99:8081
                                     set JENKINS_BUILD_JOB=DP_${env.VERSION}
                                     set JENKINS_BUILD_USER=eranp
-                                    set JENKINS_BUILD_TOKEN=${JENKINS_BUILD_TOKEN}
+                                    set JENKINS_BUILD_TOKEN=114e579ff6f2cac68e2d0f6f20809b19df
                                     ${extraBat}
                                     python unified_weekly_report.py
                                 """
@@ -246,7 +245,10 @@ pipeline {
                                 . venv/bin/activate
                                 export VERSION=${env.VERSION}
                                 export GITHUB_TOKEN='${env.GITHUB_TOKEN}'
+                                export JENKINS_BUILD_URL='http://10.27.11.99:8081'
                                 export JENKINS_BUILD_JOB='DP_${env.VERSION}'
+                                export JENKINS_BUILD_USER='eranp'
+                                export JENKINS_BUILD_TOKEN='114e579ff6f2cac68e2d0f6f20809b19df'
                                 ${extraUnix}
                                 if [ -f .env ]; then
                                     echo "Found .env file, loading environment variables..."
@@ -265,7 +267,10 @@ pipeline {
                                 call venv\\Scripts\\activate.bat
                                 set VERSION=${env.VERSION}
                                 set GITHUB_TOKEN=${env.GITHUB_TOKEN}
+                                set JENKINS_BUILD_URL=http://10.27.11.99:8081
                                 set JENKINS_BUILD_JOB=DP_${env.VERSION}
+                                set JENKINS_BUILD_USER=eranp
+                                set JENKINS_BUILD_TOKEN=114e579ff6f2cac68e2d0f6f20809b19df
                                 ${extraBat}
                                 if exist .env (
                                     echo Found .env file, loading environment variables...
