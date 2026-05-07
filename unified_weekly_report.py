@@ -928,20 +928,25 @@ def get_build_changelogs(builds_str):
     for build_num in build_numbers:
         try:
             url = f"{jenkins_url}/job/{jenkins_job}/{build_num}/api/json"
-            params = {'tree': 'changeSet[items[msg,author[fullName],date,commitId]],timestamp,result,displayName'}
+            params = {'tree': 'changeSets[items[msg,author[fullName],commitId]],changeSet[items[msg,author[fullName],commitId]],timestamp,result,displayName'}
             resp = requests.get(url, params=params, auth=auth, timeout=15, verify=False)
             if resp.status_code != 200:
                 continue
             data = resp.json()
             changes = []
-            change_set = data.get('changeSet', {})
-            items = change_set.get('items', []) if change_set else []
-            for item in items:
-                changes.append({
-                    'msg': item.get('msg', '').split('\n')[0][:120],  # first line, max 120 chars
-                    'author': item.get('author', {}).get('fullName', 'Unknown'),
-                    'commitId': item.get('commitId', '')[:8],
-                })
+            # Pipeline jobs use changeSets (plural), freestyle uses changeSet (singular)
+            change_sets = data.get('changeSets', [])
+            if not change_sets:
+                cs = data.get('changeSet')
+                if cs:
+                    change_sets = [cs]
+            for cs in change_sets:
+                for item in cs.get('items', []):
+                    changes.append({
+                        'msg': item.get('msg', '').split('\n')[0][:120],
+                        'author': item.get('author', {}).get('fullName', 'Unknown'),
+                        'commitId': item.get('commitId', '')[:8],
+                    })
             build_info = {
                 'build': build_num,
                 'displayName': data.get('displayName', f'#{build_num}'),
