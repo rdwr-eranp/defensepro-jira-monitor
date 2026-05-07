@@ -34,6 +34,13 @@ pipeline {
             description: 'Sprint end date override (YYYY-MM-DD). Leave empty to use the current active sprint.'
         )
 
+        // --- CI Run tracking ---
+        string(
+            name: 'CI_RUN_START',
+            defaultValue: '',
+            description: 'CI run start date (YYYY-MM-DD) for coverage progress tracking and completion estimation. Leave empty to skip progress analysis.'
+        )
+
         // --- Report type ---
         choice(
             name: 'REPORT_TYPE',
@@ -83,6 +90,9 @@ pipeline {
                     env.SPRINT_START_OVERRIDE = params.SPRINT_START?.trim() ?: ''
                     env.SPRINT_END_OVERRIDE   = params.SPRINT_END?.trim()   ?: ''
 
+                    // CI Run tracking
+                    env.CI_RUN_START_OVERRIDE = params.CI_RUN_START?.trim() ?: ''
+
                     // Misc flags
                     env.SKIP_AI_INSIGHTS_FLAG = params.SKIP_AI_INSIGHTS ? '1' : ''
                     env.REPORT_TYPE           = params.REPORT_TYPE ?: 'unified'
@@ -93,6 +103,7 @@ pipeline {
                     echo "BUILDS         : ${env.BUILDS_OVERRIDE ?: '(auto-detect)'}"
                     echo "SPRINT_START   : ${env.SPRINT_START_OVERRIDE ?: '(current sprint)'}"
                     echo "SPRINT_END     : ${env.SPRINT_END_OVERRIDE   ?: '(current sprint)'}"
+                    echo "CI_RUN_START   : ${env.CI_RUN_START_OVERRIDE ?: '(not set)'}"
                     echo "REPORT_TYPE    : ${env.REPORT_TYPE}"
                     echo "EMAIL_RECIPIENTS: ${env.EMAIL_RECIPIENTS}"
                     echo "SKIP_AI_INSIGHTS: ${params.SKIP_AI_INSIGHTS}"
@@ -183,6 +194,10 @@ pipeline {
                     if (env.SPRINT_END_OVERRIDE) {
                         extraUnix += "export SPRINT_END='${env.SPRINT_END_OVERRIDE}'\n"
                         extraBat  += "set SPRINT_END=${env.SPRINT_END_OVERRIDE}\n"
+                    }
+                    if (env.CI_RUN_START_OVERRIDE) {
+                        extraUnix += "export CI_RUN_START='${env.CI_RUN_START_OVERRIDE}'\n"
+                        extraBat  += "set CI_RUN_START=${env.CI_RUN_START_OVERRIDE}\n"
                     }
                     if (env.SKIP_AI_INSIGHTS_FLAG) {
                         extraUnix += "export SKIP_AI_INSIGHTS=1\n"
@@ -277,6 +292,10 @@ pipeline {
                     if (env.SPRINT_END_OVERRIDE) {
                         extraUnix += "export SPRINT_END='${env.SPRINT_END_OVERRIDE}'\n"
                         extraBat  += "set SPRINT_END=${env.SPRINT_END_OVERRIDE}\n"
+                    }
+                    if (env.CI_RUN_START_OVERRIDE) {
+                        extraUnix += "export CI_RUN_START='${env.CI_RUN_START_OVERRIDE}'\n"
+                        extraBat  += "set CI_RUN_START=${env.CI_RUN_START_OVERRIDE}\n"
                     }
                     if (env.SKIP_AI_INSIGHTS_FLAG) {
                         extraUnix += "export SKIP_AI_INSIGHTS=1\n"

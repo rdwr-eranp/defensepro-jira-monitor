@@ -1682,11 +1682,203 @@ def get_bugs_closed_during_period(bugs, start_date, end_date):
     return closed_bugs
 
 
+def get_coverage_progress(conn, version, ci_run_start):
+    """
+    Calculate daily cumulative coverage progress since CI run start date.
+    Returns a dict with daily breakdown and completion estimation.
+    """
+    if not conn or not ci_run_start:
+        return None
+
+    prev_version = get_previous_version(version)
+    qdos_filter = "AND LOWER(t.name) NOT LIKE '%qdos%'" if _version_tuple(version) >= (10, 14, 0, 0) else ""
+
+    try:
+        # Get baseline (available tests per platform_type/mode from previous version)
+        baseline_query = f"""
+            SELECT 
+                CASE WHEN d.platform IN ('UHT','MRQP','MR2') THEN 'FPGA'
+                     WHEN d.platform IN ('ESXI','KVM','VL3','HT2') THEN 'Software'
+                     WHEN d.platform IN ('MRQ_X','MRQX') THEN 'EZchip' ELSE 'Other' END as platform_type,
+                CASE WHEN p.name LIKE '%-Routing' THEN 'Routing' ELSE 'Transparent' END as mode,
+                COUNT(DISTINCT te.test_id) as available_tests
+            FROM test_execution te
+            JOIN device d ON te.device_id = d.id
+            JOIN profile p ON te.profile_id = p.id
+            JOIN test t ON te.test_id = t.id
+            WHERE te.version = '{prev_version}' AND te.mode = 'regression'
+              AND NOT (p.name LIKE '%-Routing' AND LOWER(t.name) LIKE '%antiscan%')
+              {qdos_filter}
+            GROUP BY 1, 2
+        """
+        baseline_df = pd.read_sql(baseline_query, conn)
+        baseline_total = baseline_df[baseline_df['platform_type'] != 'Other']['available_tests'].sum()
+
+        if baseline_total == 0:
+            return None
+
+        # Get daily execution counts
+        daily_query = f"""
+            SELECT te.start_time::date as run_date,
+                   COUNT(DISTINCT te.test_id) as unique_tests,
+                   COUNT(*) as total_executions,
+                   SUM(CASE WHEN LOWER(te.status) = 'passed' THEN 1 ELSE 0 END) as passed,
+                   SUM(CASE WHEN LOWER(te.status) IN ('failed','error','fail') THEN 1 ELSE 0 END) as failed
+            FROM test_execution te
+            JOIN test t ON te.test_id = t.id
+            WHERE te.version = '{version}' AND te.mode = 'regression'
+              AND te.start_time >= '{ci_run_start}'
+              {qdos_filter}
+            GROUP BY te.start_time::date
+            ORDER BY run_date
+        """
+        daily_df = pd.read_sql(daily_query, conn)
+
+        if daily_df.empty:
+            return None
+
+        # Get cumulative unique tests per day (per platform_type/mode for proper coverage)
+        cumulative_query = f"""
+            SELECT d.run_date, COUNT(DISTINCT sub.test_id || '-' || sub.platform_type || '-' || sub.mode) as cumulative_pt_tests
+            FROM (SELECT DISTINCT start_time::date as run_date FROM test_execution
+                  WHERE version = '{version}' AND mode = 'regression'
+                  AND start_time >= '{ci_run_start}') d
+            CROSS JOIN LATERAL (
+                SELECT DISTINCT te.test_id,
+                    CASE WHEN dev.platform IN ('UHT','MRQP','MR2') THEN 'FPGA'
+                         WHEN dev.platform IN ('ESXI','KVM','VL3','HT2') THEN 'Software'
+                         WHEN dev.platform IN ('MRQ_X','MRQX') THEN 'EZchip' ELSE 'Other' END as platform_type,
+                    CASE WHEN p.name LIKE '%-Routing' THEN 'Routing' ELSE 'Transparent' END as mode
+                FROM test_execution te
+                JOIN device dev ON te.device_id = dev.id
+                JOIN profile p ON te.profile_id = p.id
+                JOIN test t ON te.test_id = t.id
+                WHERE te.version = '{version}' AND te.mode = 'regression'
+                  AND te.start_time >= '{ci_run_start}'
+                  AND te.start_time < (d.run_date + interval '1 day')
+                  AND NOT (p.name LIKE '%-Routing' AND LOWER(t.name) LIKE '%antiscan%')
+                  {qdos_filter}
+                  AND dev.platform IN ('UHT','MRQP','MR2','ESXI','KVM','VL3','HT2','MRQ_X','MRQX')
+            ) sub
+            GROUP BY d.run_date ORDER BY d.run_date
+        """
+        cumulative_df = pd.read_sql(cumulative_query, conn)
+
+        if cumulative_df.empty:
+            return None
+
+        # Build daily progress list
+        days = []
+        prev_cum = 0
+        for _, row in cumulative_df.iterrows():
+            cum = int(row['cumulative_pt_tests'])
+            delta = cum - prev_cum
+            coverage_pct = cum / baseline_total * 100
+            daily_add_pct = delta / baseline_total * 100
+            days.append({
+                'date': str(row['run_date']),
+                'cumulative_tests': cum,
+                'new_tests': delta,
+                'coverage_pct': round(coverage_pct, 1),
+                'daily_add_pct': round(daily_add_pct, 1),
+            })
+            prev_cum = cum
+
+        # Calculate estimation
+        current_coverage = days[-1]['coverage_pct'] if days else 0
+        remaining = 100.0 - current_coverage
+
+        # Use average of full days only (exclude today if partial)
+        full_days = days[:-1] if len(days) > 1 else days
+        if full_days:
+            avg_daily_rate = sum(d['daily_add_pct'] for d in full_days) / len(full_days)
+        else:
+            avg_daily_rate = days[0]['daily_add_pct'] if days else 0
+
+        if avg_daily_rate > 0:
+            days_to_complete = remaining / avg_daily_rate
+            estimated_date = datetime.now() + timedelta(days=int(days_to_complete) + 1)
+        else:
+            days_to_complete = None
+            estimated_date = None
+
+        return {
+            'ci_run_start': ci_run_start,
+            'baseline_total': int(baseline_total),
+            'prev_version': prev_version,
+            'days': days,
+            'current_coverage': current_coverage,
+            'remaining': round(remaining, 1),
+            'avg_daily_rate': round(avg_daily_rate, 1),
+            'days_to_complete': int(days_to_complete) + 1 if days_to_complete else None,
+            'estimated_date': estimated_date.strftime('%Y-%m-%d') if estimated_date else None,
+            'total_days_elapsed': len(days),
+        }
+
+    except Exception as e:
+        print(f"   \u26a0\ufe0f Coverage progress calculation failed: {e}")
+        return None
+
+
+def generate_coverage_progress_html(progress_data):
+    """Generate HTML section for coverage progress and estimation."""
+    if not progress_data:
+        return ''
+
+    days = progress_data['days']
+    if not days:
+        return ''
+
+    # Progress bar
+    current = progress_data['current_coverage']
+    bar_color = '#1565c0' if current < 70 else '#1976d2' if current < 90 else '#0d47a1'
+
+    # Daily breakdown table rows
+    table_rows = ''
+    for d in days:
+        table_rows += (
+            f'<tr><td>{d["date"]}</td>'
+            f'<td style="text-align:center;">{d["cumulative_tests"]:,}</td>'
+            f'<td style="text-align:center;">+{d["new_tests"]:,}</td>'
+            f'<td style="text-align:center; color:#1565c0; font-weight:bold;">{d["coverage_pct"]:.1f}%</td>'
+            f'<td style="text-align:center;">+{d["daily_add_pct"]:.1f}%</td></tr>'
+        )
+
+    # Estimation text
+    if progress_data['days_to_complete']:
+        est_html = (
+            f'<div style="background: #e3f2fd; border-left: 5px solid #1565c0; padding: 15px; margin: 15px 0; border-radius: 4px;">'
+            f'<strong>\U0001f4c8 Completion Estimate:</strong> At the current avg rate of '
+            f'<strong>{progress_data["avg_daily_rate"]:.1f}%/day</strong>, '
+            f'100% coverage expected in <strong>~{progress_data["days_to_complete"]} days</strong> '
+            f'(estimated <strong>{progress_data["estimated_date"]}</strong>). '
+            f'Elapsed: {progress_data["total_days_elapsed"]} days since CI run start ({progress_data["ci_run_start"]}).'
+            f'</div>'
+        )
+    else:
+        est_html = ''
+
+    progress_html = (
+        f'<h3>\U0001f4ca CI Coverage Progress & Completion Estimation</h3>'
+        f'<p><strong>CI Run Start:</strong> {progress_data["ci_run_start"]} | '
+        f'<strong>Baseline ({progress_data["prev_version"]}):</strong> {progress_data["baseline_total"]:,} test/platform/mode combinations</p>'
+        f'<div style="background: #e0e0e0; border-radius: 8px; overflow: hidden; height: 30px; margin: 15px 0; position: relative;">'
+        f'<div style="background: {bar_color}; height: 100%; width: {min(current, 100):.1f}%; transition: width 0.5s;"></div>'
+        f'<span style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); font-weight: bold; color: {"white" if current > 50 else "#333"};">{current:.1f}% Coverage</span>'
+        f'</div>'
+        f'{est_html}'
+        f'<table><thead><tr><th>Date</th><th>Cumulative Tests</th><th>New Today</th><th>Coverage</th><th>Daily Addition</th></tr></thead>'
+        f'<tbody>{table_rows}</tbody></table>'
+    )
+    return progress_html
+
+
 def main():
     version = os.getenv('VERSION')
     builds_override = os.getenv('BUILDS', '').strip()
     sprint_start_override = os.getenv('SPRINT_START', '').strip()
     sprint_end_override = os.getenv('SPRINT_END', '').strip()
+    ci_run_start = os.getenv('CI_RUN_START', '').strip()
     skip_ai_insights = os.getenv('SKIP_AI_INSIGHTS', '').strip().lower() in ('1', 'true', 'yes')
 
     if not version:
@@ -1770,6 +1962,18 @@ def main():
     else:
         print("⚠️  Skipping automation data (no DB connection or no builds)\n")
         automation_data = empty_automation
+
+    # Coverage progress & estimation (requires CI_RUN_START)
+    coverage_progress = None
+    if ci_run_start and conn:
+        print(f"Calculating coverage progress since CI run start ({ci_run_start})...")
+        coverage_progress = get_coverage_progress(conn, version, ci_run_start)
+        if coverage_progress:
+            print(f"✓ Coverage progress: {coverage_progress['current_coverage']:.1f}% "
+                  f"(avg {coverage_progress['avg_daily_rate']:.1f}%/day, "
+                  f"est. completion: {coverage_progress['estimated_date'] or 'N/A'})\n")
+        else:
+            print("⚠️  No coverage progress data available\n")
 
     # Fetch previous sprints for trend analysis
     print("Fetching sprint list for trend history...")
@@ -2397,7 +2601,10 @@ def main():
             for p in sorted(automation_data['platform_data'], key=lambda x: x['platform']):
                 platform_html += f'<tr><td>{p["platform"]}</td><td>{p["tests"]}</td><td>{p["passed"]}</td><td>{p["failed"]}</td><td>{p["pass_ratio"]:.1f}%</td></tr>'
             platform_html += '</tbody></table></details>'
-    
+
+    # Coverage progress section
+    coverage_progress_html = generate_coverage_progress_html(coverage_progress)
+
     # Add version status warning if released
     version_warning_html = ""
     if not version_info['is_active']:
@@ -2491,6 +2698,8 @@ def main():
         {('<div style="background: linear-gradient(135deg, #e0f7fa 0%, #e1f5fe 100%); border-left: 5px solid #0288d1; padding: 25px; margin: 20px 0; border-radius: 5px; box-shadow: 0 2px 8px rgba(2, 136, 209, 0.1);"><h3 style="margin-top: 0; color: #01579b;">🤖 AI-Generated Insights <span style="font-size: 12px; background: #0288d1; color: white; padding: 3px 8px; border-radius: 10px; margin-left: 8px;">O3-MINI</span></h3><div style="line-height: 1.8; color: #263238;">' + ai_insights + '</div></div>') if ai_insights else ''}
         
         {platform_html}
+        
+        {coverage_progress_html}
         
         {('<h3>🐛 Automation Bugs During Sprint</h3><p>' + str(len(automation_data.get("automation_bugs", []))) + ' bugs with automation origin found during sprint period</p><table><thead><tr><th>Key</th><th>Summary</th><th>Status</th><th>Priority</th><th>Created</th></tr></thead><tbody>' + ''.join([f'<tr><td><a href="https://rwrnd.atlassian.net/browse/{bug["key"]}">{bug["key"]}</a></td><td>{html.escape(bug["summary"])}</td><td>{html.escape(bug["status"])}</td><td>{html.escape(bug["priority"])}</td><td>{bug["created"]}</td></tr>' for bug in automation_data.get("automation_bugs", [])]) + '</tbody></table>') if automation_data.get("automation_bugs") else ''}
 
