@@ -1768,6 +1768,7 @@ def main():
     builds_override = os.getenv('BUILDS', '').strip()
     sprint_start_override = os.getenv('SPRINT_START', '').strip()
     sprint_end_override = os.getenv('SPRINT_END', '').strip()
+    ci_run_start = os.getenv('CI_RUN_START', '').strip()
     skip_ai_insights = os.getenv('SKIP_AI_INSIGHTS', '').strip().lower() in ('1', 'true', 'yes')
 
     if not version:
@@ -1790,20 +1791,25 @@ def main():
     if sprint_start_override or sprint_end_override:
         print(f"Using overridden sprint period: {sprint_start[:10]} to {sprint_end[:10]}")
 
+    # When CI_RUN_START is set, use it as the effective start for CI metrics
+    ci_start = ci_run_start if ci_run_start else sprint_start
+    if ci_run_start:
+        print(f"CI_RUN_START override: using {ci_run_start} as CI metrics start date")
+
     # Auto-detect builds from database unless overridden
     if builds_override:
         builds = builds_override
         print(f"Using overridden builds: {builds}")
     else:
         print("Auto-detecting builds from database...")
-        builds = get_builds_for_version(conn, version, sprint_start, sprint_end)
+        builds = get_builds_for_version(conn, version, ci_start, sprint_end)
         if builds:
             print(f"✓ Auto-detected builds: {builds}")
         else:
             print("⚠️  No builds found for this version in sprint period")
             builds = ''  # Will result in 0 test executions
     print(f"Sprint: {sprint.name}")
-    print(f"Period: {sprint_start[:10]} to {sprint_end[:10]}\n")
+    print(f"Period: {ci_start[:10]} to {sprint_end[:10]}\n")
     
     # Get version info to check if it's active
     version_info = get_version_info(jira, version)
@@ -1831,7 +1837,7 @@ def main():
     
     # Get automation data
     print("Fetching automation data...")
-    automation_data = get_automation_data(conn, jira, version, builds, sprint_start, sprint_end)
+    automation_data = get_automation_data(conn, jira, version, builds, ci_start, sprint_end)
     print(f"✓ Found {automation_data['total_tests']} tests with {automation_data['total_executions']} executions\n")
 
     # Fetch previous sprints for trend analysis
