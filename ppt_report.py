@@ -1,52 +1,82 @@
 """
 PowerPoint Report Generator for DefensePro Weekly Report.
-Converts unified report data into a multi-slide presentation.
+Embeds Plotly chart images and key data into a multi-slide presentation.
 """
-import os
 import io
-import json
 from datetime import datetime
 
 try:
     from pptx import Presentation
-    from pptx.util import Inches, Pt, Emu
+    from pptx.util import Inches, Pt
     from pptx.dml.color import RGBColor
-    from pptx.enum.text import PP_ALIGN, MSO_ANCHOR
-    from pptx.enum.chart import XL_CHART_TYPE
+    from pptx.enum.text import PP_ALIGN
     HAS_PPTX = True
 except ImportError:
     HAS_PPTX = False
 
-try:
-    import plotly.io as pio
-    HAS_KALEIDO = True
-except ImportError:
-    HAS_KALEIDO = False
 
+# Slide dimensions (widescreen 10x7.5)
+SLIDE_W = Inches(10)
+SLIDE_H = Inches(7.5)
 
 if HAS_PPTX:
-    # Color scheme
     BLUE = RGBColor(0x19, 0x76, 0xD2)
-    DARK_GRAY = RGBColor(0x42, 0x42, 0x42)
-    LIGHT_GRAY = RGBColor(0x75, 0x75, 0x75)
+    DARK = RGBColor(0x33, 0x33, 0x33)
+    GRAY = RGBColor(0x66, 0x66, 0x66)
+    LIGHT_BG = RGBColor(0xF5, 0xF5, 0xF5)
     GREEN = RGBColor(0x27, 0xAE, 0x60)
     RED = RGBColor(0xE7, 0x4C, 0x3C)
-    ORANGE = RGBColor(0xF3, 0x9C, 0x12)
+    ORANGE = RGBColor(0xF5, 0x76, 0x00)
     WHITE = RGBColor(0xFF, 0xFF, 0xFF)
 
 
-def _add_title_slide(prs, version, sprint_name, period, ci_run_start=None):
-    """Slide 1: Title"""
-    slide = prs.slides.add_slide(prs.slide_layouts[6])  # Blank layout
+def _title_bar(slide, title):
+    """Add a blue title bar at the top of a slide."""
+    bar = slide.shapes.add_shape(1, Inches(0), Inches(0), SLIDE_W, Inches(0.9))
+    bar.fill.solid()
+    bar.fill.fore_color.rgb = BLUE
+    bar.line.fill.background()
 
-    # Blue header bar
-    shape = slide.shapes.add_shape(1, Inches(0), Inches(0), Inches(10), Inches(2.5))  # Rectangle
-    shape.fill.solid()
-    shape.fill.fore_color.rgb = BLUE
-    shape.line.fill.background()
+    txBox = slide.shapes.add_textbox(Inches(0.4), Inches(0.15), Inches(9), Inches(0.7))
+    tf = txBox.text_frame
+    p = tf.paragraphs[0]
+    p.text = title
+    p.font.size = Pt(22)
+    p.font.bold = True
+    p.font.color.rgb = WHITE
 
-    # Title text
-    txBox = slide.shapes.add_textbox(Inches(0.5), Inches(0.5), Inches(9), Inches(1.5))
+
+def _add_image_slide(prs, title, img_bytes, subtitle=None):
+    """Add a slide with a full-width chart image."""
+    if not img_bytes:
+        return
+    slide = prs.slides.add_slide(prs.slide_layouts[6])
+    _title_bar(slide, title)
+
+    if subtitle:
+        txBox = slide.shapes.add_textbox(Inches(0.4), Inches(1.0), Inches(9), Inches(0.4))
+        tf = txBox.text_frame
+        p = tf.paragraphs[0]
+        p.text = subtitle
+        p.font.size = Pt(11)
+        p.font.color.rgb = GRAY
+
+    img_top = Inches(1.5) if subtitle else Inches(1.1)
+    img_height = Inches(5.8) if subtitle else Inches(6.2)
+    stream = io.BytesIO(img_bytes)
+    slide.shapes.add_picture(stream, Inches(0.3), img_top, Inches(9.4), img_height)
+
+
+def _slide_title(prs, version, sprint_name, period, ci_run_start):
+    """Title slide."""
+    slide = prs.slides.add_slide(prs.slide_layouts[6])
+
+    bg = slide.shapes.add_shape(1, Inches(0), Inches(0), SLIDE_W, Inches(3.2))
+    bg.fill.solid()
+    bg.fill.fore_color.rgb = BLUE
+    bg.line.fill.background()
+
+    txBox = slide.shapes.add_textbox(Inches(0.6), Inches(0.6), Inches(8.8), Inches(2.4))
     tf = txBox.text_frame
     tf.word_wrap = True
     p = tf.paragraphs[0]
@@ -54,14 +84,12 @@ def _add_title_slide(prs, version, sprint_name, period, ci_run_start=None):
     p.font.size = Pt(36)
     p.font.bold = True
     p.font.color.rgb = WHITE
-
     p2 = tf.add_paragraph()
     p2.text = "Weekly Status Report"
-    p2.font.size = Pt(24)
+    p2.font.size = Pt(22)
     p2.font.color.rgb = WHITE
 
-    # Metadata
-    txBox2 = slide.shapes.add_textbox(Inches(0.5), Inches(3), Inches(9), Inches(2))
+    txBox2 = slide.shapes.add_textbox(Inches(0.6), Inches(3.6), Inches(8.8), Inches(3))
     tf2 = txBox2.text_frame
     tf2.word_wrap = True
     lines = [
@@ -74,15 +102,15 @@ def _add_title_slide(prs, version, sprint_name, period, ci_run_start=None):
     for i, line in enumerate(lines):
         p = tf2.paragraphs[0] if i == 0 else tf2.add_paragraph()
         p.text = line
-        p.font.size = Pt(16)
-        p.font.color.rgb = DARK_GRAY
-        p.space_after = Pt(8)
+        p.font.size = Pt(15)
+        p.font.color.rgb = DARK
+        p.space_after = Pt(6)
 
 
-def _add_summary_slide(prs, data):
-    """Slide 2: Executive Summary with key metrics"""
+def _slide_summary(prs, data):
+    """Executive summary with key metric cards."""
     slide = prs.slides.add_slide(prs.slide_layouts[6])
-    _add_slide_title(slide, "Executive Summary")
+    _title_bar(slide, "Executive Summary")
 
     metrics = [
         ("Bugs on Dev", str(data['bugs_on_dev']), ORANGE if data['bugs_on_dev'] > 0 else GREEN),
@@ -93,94 +121,88 @@ def _add_summary_slide(prs, data):
         ("Coverage", f"{data.get('coverage', 0):.1f}%", BLUE),
     ]
 
-    cols = 3
     for i, (label, value, color) in enumerate(metrics):
-        row = i // cols
-        col = i % cols
-        left = Inches(0.5 + col * 3.1)
-        top = Inches(1.8 + row * 2.2)
+        row = i // 3
+        col = i % 3
+        left = Inches(0.4 + col * 3.15)
+        top = Inches(1.3 + row * 2.8)
 
-        # Card background
-        card = slide.shapes.add_shape(1, left, top, Inches(2.8), Inches(1.8))
+        card = slide.shapes.add_shape(5, left, top, Inches(2.9), Inches(2.3))
         card.fill.solid()
-        card.fill.fore_color.rgb = RGBColor(0xF5, 0xF5, 0xF5)
+        card.fill.fore_color.rgb = LIGHT_BG
         card.line.color.rgb = RGBColor(0xE0, 0xE0, 0xE0)
-        card.shadow.inherit = False
 
-        # Value
-        txBox = slide.shapes.add_textbox(left + Inches(0.2), top + Inches(0.2), Inches(2.4), Inches(1))
+        txBox = slide.shapes.add_textbox(left + Inches(0.2), top + Inches(0.4), Inches(2.5), Inches(1))
         tf = txBox.text_frame
         tf.word_wrap = True
         p = tf.paragraphs[0]
         p.text = value
-        p.font.size = Pt(28)
+        p.font.size = Pt(32)
         p.font.bold = True
         p.font.color.rgb = color
         p.alignment = PP_ALIGN.CENTER
 
-        # Label
-        p2 = tf.add_paragraph()
+        txBox2 = slide.shapes.add_textbox(left + Inches(0.2), top + Inches(1.5), Inches(2.5), Inches(0.6))
+        tf2 = txBox2.text_frame
+        p2 = tf2.paragraphs[0]
         p2.text = label
         p2.font.size = Pt(12)
-        p2.font.color.rgb = LIGHT_GRAY
+        p2.font.color.rgb = GRAY
         p2.alignment = PP_ALIGN.CENTER
 
 
-def _add_bug_status_slide(prs, data):
-    """Slide 3: Bug Status breakdown"""
+def _slide_bugs_table(prs, data):
+    """Bugs on Dev + QA table."""
+    dev_list = data.get('bugs_on_dev_list', [])
+    qa_list = data.get('bugs_on_qa_list', [])
+    all_bugs = []
+    for b in dev_list[:7]:
+        all_bugs.append(('Dev', b['key'], b['priority'], b['summary'][:55]))
+    for b in qa_list[:7]:
+        all_bugs.append(('QA', b['key'], b['priority'], b['summary'][:55]))
+
+    if not all_bugs:
+        return
+
     slide = prs.slides.add_slide(prs.slide_layouts[6])
-    _add_slide_title(slide, "Bug Status Overview")
+    _title_bar(slide, f"Open Bugs — {data['bugs_on_dev']} Dev / {data['bugs_on_qa']} QA")
 
-    # Summary text
-    txBox = slide.shapes.add_textbox(Inches(0.5), Inches(1.5), Inches(9), Inches(1))
-    tf = txBox.text_frame
-    tf.word_wrap = True
-    p = tf.paragraphs[0]
-    p.text = f"Active Bugs: {data['bugs_on_dev'] + data['bugs_on_qa']} | Closed this sprint: {data['bugs_closed_total']}"
-    p.font.size = Pt(14)
-    p.font.color.rgb = DARK_GRAY
+    rows = len(all_bugs) + 1
+    tbl = slide.shapes.add_table(rows, 4, Inches(0.3), Inches(1.2), Inches(9.4), Inches(0.45 * rows)).table
+    tbl.columns[0].width = Inches(0.7)
+    tbl.columns[1].width = Inches(1.3)
+    tbl.columns[2].width = Inches(1.2)
+    tbl.columns[3].width = Inches(6.2)
 
-    # Bug table
-    if data.get('bugs_on_dev_list') or data.get('bugs_on_qa_list'):
-        all_bugs = []
-        for b in (data.get('bugs_on_dev_list') or [])[:5]:
-            all_bugs.append(('Dev', b['key'], b['priority'], b['summary'][:50]))
-        for b in (data.get('bugs_on_qa_list') or [])[:5]:
-            all_bugs.append(('QA', b['key'], b['priority'], b['summary'][:50]))
+    headers = ['Phase', 'Key', 'Priority', 'Summary']
+    for ci, h in enumerate(headers):
+        cell = tbl.cell(0, ci)
+        cell.text = h
+        cell.fill.solid()
+        cell.fill.fore_color.rgb = BLUE
+        for par in cell.text_frame.paragraphs:
+            par.font.color.rgb = WHITE
+            par.font.size = Pt(10)
+            par.font.bold = True
 
-        if all_bugs:
-            rows = len(all_bugs) + 1
-            table = slide.shapes.add_table(rows, 4, Inches(0.5), Inches(2.5), Inches(9), Inches(0.4 * rows)).table
-            table.columns[0].width = Inches(0.8)
-            table.columns[1].width = Inches(1.2)
-            table.columns[2].width = Inches(1.2)
-            table.columns[3].width = Inches(5.8)
-
-            headers = ['Phase', 'Key', 'Priority', 'Summary']
-            for i, h in enumerate(headers):
-                cell = table.cell(0, i)
-                cell.text = h
-                cell.fill.solid()
-                cell.fill.fore_color.rgb = BLUE
-                for paragraph in cell.text_frame.paragraphs:
-                    paragraph.font.color.rgb = WHITE
-                    paragraph.font.size = Pt(10)
-                    paragraph.font.bold = True
-
-            for row_idx, (phase, key, priority, summary) in enumerate(all_bugs, 1):
-                table.cell(row_idx, 0).text = phase
-                table.cell(row_idx, 1).text = key
-                table.cell(row_idx, 2).text = priority
-                table.cell(row_idx, 3).text = summary
-                for col_idx in range(4):
-                    for paragraph in table.cell(row_idx, col_idx).text_frame.paragraphs:
-                        paragraph.font.size = Pt(9)
+    for ri, (phase, key, prio, summary) in enumerate(all_bugs, 1):
+        tbl.cell(ri, 0).text = phase
+        tbl.cell(ri, 1).text = key
+        tbl.cell(ri, 2).text = prio
+        tbl.cell(ri, 3).text = summary
+        for ci in range(4):
+            for par in tbl.cell(ri, ci).text_frame.paragraphs:
+                par.font.size = Pt(9)
+        prio_color = RED if prio in ('High', 'Highest', 'Critical') else ORANGE if prio == 'Medium' else DARK
+        for par in tbl.cell(ri, 2).text_frame.paragraphs:
+            par.font.color.rgb = prio_color
+            par.font.bold = True
 
 
-def _add_automation_slide(prs, data):
-    """Slide 4: Automation / CI metrics"""
+def _slide_automation_summary(prs, data):
+    """CI / Automation key stats."""
     slide = prs.slides.add_slide(prs.slide_layouts[6])
-    _add_slide_title(slide, "CI Iteration - Automation Status")
+    _title_bar(slide, "CI Iteration — Automation Status")
 
     lines = [
         f"Tests Executed: {data['total_tests']:,} unique tests, {data['total_executions']:,} total runs",
@@ -194,258 +216,271 @@ def _add_automation_slide(prs, data):
     if data.get('projected_coverage'):
         lines.append(f"Projected at Sprint End: {data['projected_coverage']}%")
 
-    txBox = slide.shapes.add_textbox(Inches(0.5), Inches(1.8), Inches(9), Inches(4))
+    txBox = slide.shapes.add_textbox(Inches(0.5), Inches(1.4), Inches(9), Inches(5))
     tf = txBox.text_frame
     tf.word_wrap = True
     for i, line in enumerate(lines):
         p = tf.paragraphs[0] if i == 0 else tf.add_paragraph()
-        p.text = f"• {line}"
+        p.text = f"•  {line}"
+        p.font.size = Pt(15)
+        p.font.color.rgb = DARK
+        p.space_after = Pt(14)
+
+
+def _slide_sub_exec(prs, data):
+    """Sub test execution progress."""
+    total = data.get('sub_exec_total', 0)
+    if total == 0:
+        return
+    completed = data.get('sub_exec_completed', 0)
+    in_progress = data.get('sub_exec_in_progress', 0)
+    not_started = data.get('sub_exec_not_started', 0)
+    xray = data.get('xray_summary', {})
+
+    slide = prs.slides.add_slide(prs.slide_layouts[6])
+    _title_bar(slide, "Sub Test Execution Status")
+
+    bar_left = Inches(0.5)
+    bar_top = Inches(1.5)
+    bar_w = Inches(9)
+    bar_h = Inches(0.6)
+
+    bg_bar = slide.shapes.add_shape(5, bar_left, bar_top, bar_w, bar_h)
+    bg_bar.fill.solid()
+    bg_bar.fill.fore_color.rgb = RGBColor(0xE0, 0xE0, 0xE0)
+    bg_bar.line.fill.background()
+
+    pct = completed / total if total > 0 else 0
+    if pct > 0:
+        fg_bar = slide.shapes.add_shape(5, bar_left, bar_top, Inches(9 * pct), bar_h)
+        fg_bar.fill.solid()
+        fg_bar.fill.fore_color.rgb = GREEN
+        fg_bar.line.fill.background()
+
+    txBar = slide.shapes.add_textbox(bar_left, bar_top + Inches(0.05), bar_w, bar_h)
+    tf = txBar.text_frame
+    p = tf.paragraphs[0]
+    p.text = f"{pct*100:.0f}% Complete ({completed}/{total})"
+    p.font.size = Pt(14)
+    p.font.bold = True
+    p.font.color.rgb = WHITE if pct > 0.4 else DARK
+    p.alignment = PP_ALIGN.CENTER
+
+    lines = [
+        f"Completed: {completed}  |  In Progress: {in_progress}  |  Not Started: {not_started}",
+    ]
+    if xray.get('total_tests', 0) > 0:
+        lines.append(f"Xray Tests: {xray['total_tests']}  |  Coverage: {xray.get('testing_coverage', 0):.1f}%  |  Pass Ratio: {xray.get('pass_ratio', 0):.1f}%")
+        lines.append(f"Automation Coverage: {xray.get('automation_coverage', 0):.1f}%")
+
+    txBox = slide.shapes.add_textbox(Inches(0.5), Inches(2.5), Inches(9), Inches(3))
+    tf = txBox.text_frame
+    tf.word_wrap = True
+    for i, line in enumerate(lines):
+        p = tf.paragraphs[0] if i == 0 else tf.add_paragraph()
+        p.text = line
         p.font.size = Pt(14)
-        p.font.color.rgb = DARK_GRAY
+        p.font.color.rgb = DARK
         p.space_after = Pt(12)
 
 
-def _add_chart_slide(prs, title, fig_json, width=9, height=5):
-    """Add a slide with a Plotly chart rendered as image."""
-    if not fig_json or not HAS_KALEIDO:
-        return
-
-    slide = prs.slides.add_slide(prs.slide_layouts[6])
-    _add_slide_title(slide, title)
-
-    try:
-        import plotly.io as pio
-        fig = pio.from_json(fig_json)
-        img_bytes = fig.to_image(format="png", width=int(width * 100), height=int(height * 100), scale=2)
-        image_stream = io.BytesIO(img_bytes)
-        slide.shapes.add_picture(image_stream, Inches(0.5), Inches(1.5), Inches(width), Inches(height))
-    except Exception as e:
-        # Fallback: add text noting chart couldn't be rendered
-        txBox = slide.shapes.add_textbox(Inches(1), Inches(3), Inches(8), Inches(1))
-        txBox.text_frame.paragraphs[0].text = f"[Chart not available: {str(e)[:80]}]"
-        txBox.text_frame.paragraphs[0].font.size = Pt(12)
-        txBox.text_frame.paragraphs[0].font.color.rgb = LIGHT_GRAY
-
-
-def _add_sub_exec_slide(prs, data):
-    """Slide: Sub Test Execution status"""
-    slide = prs.slides.add_slide(prs.slide_layouts[6])
-    _add_slide_title(slide, "Sub Test Execution Status")
-
-    total = data.get('total', 0)
-    completed = data.get('completed', 0)
-    in_progress = data.get('in_progress', 0)
-    not_started = data.get('not_started', 0)
-
-    # Progress bar
-    bar_top = Inches(1.8)
-    bar_width = Inches(8)
-    bar_height = Inches(0.5)
-
-    # Background bar
-    bg = slide.shapes.add_shape(1, Inches(1), bar_top, bar_width, bar_height)
-    bg.fill.solid()
-    bg.fill.fore_color.rgb = RGBColor(0xE0, 0xE0, 0xE0)
-    bg.line.fill.background()
-
-    # Progress fill
-    if total > 0:
-        pct = completed / total
-        fg = slide.shapes.add_shape(1, Inches(1), bar_top, Inches(8 * pct), bar_height)
-        fg.fill.solid()
-        fg.fill.fore_color.rgb = GREEN
-        fg.line.fill.background()
-
-    # Stats text
-    txBox = slide.shapes.add_textbox(Inches(0.5), Inches(2.6), Inches(9), Inches(3))
-    tf = txBox.text_frame
-    tf.word_wrap = True
-    lines = [
-        f"Total: {total} sub test executions",
-        f"Completed: {completed} ({completed/max(total,1)*100:.0f}%)",
-        f"In Progress: {in_progress}",
-        f"Not Started: {not_started}",
-    ]
-
-    # Xray metrics if available
-    xray = data.get('xray', {})
-    if xray.get('total_tests', 0) > 0:
-        lines.append("")
-        lines.append(f"Xray Test Runs: {xray['total_tests']}")
-        lines.append(f"Testing Coverage: {xray.get('testing_coverage', 0):.1f}%")
-        lines.append(f"Pass Ratio: {xray.get('pass_ratio', 0):.1f}%")
-        lines.append(f"Automation Coverage: {xray.get('automation_coverage', 0):.1f}%")
-
-    for i, line in enumerate(lines):
-        p = tf.paragraphs[0] if i == 0 else tf.add_paragraph()
-        p.text = f"• {line}" if line else ""
-        p.font.size = Pt(13)
-        p.font.color.rgb = DARK_GRAY
-        p.space_after = Pt(8)
-
-
-def _add_changelog_slide(prs, build_changelogs):
-    """Slide: Build changelog summary"""
+def _slide_changelog(prs, build_changelogs):
+    """Build changelog."""
     if not build_changelogs:
         return
 
     slide = prs.slides.add_slide(prs.slide_layouts[6])
-    _add_slide_title(slide, "Build Changes in CI Cycle")
-
     total_changes = sum(len(b['changes']) for b in build_changelogs)
+    _title_bar(slide, f"Build Changes — {total_changes} commits across {len(build_changelogs)} builds")
 
-    txBox = slide.shapes.add_textbox(Inches(0.5), Inches(1.5), Inches(9), Inches(5.5))
+    txBox = slide.shapes.add_textbox(Inches(0.4), Inches(1.2), Inches(9.2), Inches(6))
     tf = txBox.text_frame
     tf.word_wrap = True
 
-    p = tf.paragraphs[0]
-    p.text = f"{total_changes} change(s) across {len(build_changelogs)} build(s)"
-    p.font.size = Pt(12)
-    p.font.bold = True
-    p.font.color.rgb = DARK_GRAY
-    p.space_after = Pt(16)
-
+    first = True
     for build in build_changelogs:
-        p = tf.add_paragraph()
-        result_icon = "✓" if build.get('result') == 'SUCCESS' else "✗"
-        p.text = f"{result_icon} {build['displayName']} — {len(build['changes'])} change(s)"
-        p.font.size = Pt(11)
+        p = tf.paragraphs[0] if first else tf.add_paragraph()
+        first = False
+        icon = "✓" if build.get('result') == 'SUCCESS' else "✗"
+        p.text = f"{icon} {build['displayName']} — {len(build['changes'])} change(s)"
+        p.font.size = Pt(12)
         p.font.bold = True
         p.font.color.rgb = GREEN if build.get('result') == 'SUCCESS' else RED
         p.space_before = Pt(10)
 
-        for change in build['changes'][:5]:  # Max 5 changes per build
+        for change in build['changes'][:6]:
             p = tf.add_paragraph()
-            p.text = f"    {change['commitId']} {change['msg'][:70]} ({change['author']})"
+            p.text = f"    {change['commitId']}  {change['msg'][:65]}  ({change['author']})"
             p.font.size = Pt(9)
-            p.font.color.rgb = LIGHT_GRAY
+            p.font.color.rgb = GRAY
 
-        if len(build['changes']) > 5:
+        if len(build['changes']) > 6:
             p = tf.add_paragraph()
-            p.text = f"    ... and {len(build['changes']) - 5} more"
+            p.text = f"    ... and {len(build['changes']) - 6} more"
             p.font.size = Pt(9)
-            p.font.color.rgb = LIGHT_GRAY
+            p.font.color.rgb = GRAY
 
 
-def _add_insights_slide(prs, insights, ai_insights=None):
-    """Slide: Key insights"""
+def _slide_insights(prs, insights, ai_insights):
+    """Insights slide."""
     if not insights and not ai_insights:
         return
 
     slide = prs.slides.add_slide(prs.slide_layouts[6])
-    _add_slide_title(slide, "Key Insights")
+    _title_bar(slide, "Key Insights")
 
-    txBox = slide.shapes.add_textbox(Inches(0.5), Inches(1.5), Inches(9), Inches(5.5))
+    txBox = slide.shapes.add_textbox(Inches(0.4), Inches(1.2), Inches(9.2), Inches(6))
     tf = txBox.text_frame
     tf.word_wrap = True
 
+    first = True
     if insights:
-        for i, insight in enumerate(insights[:8]):
-            p = tf.paragraphs[0] if i == 0 else tf.add_paragraph()
-            p.text = f"• {insight}"
+        for insight in insights[:8]:
+            p = tf.paragraphs[0] if first else tf.add_paragraph()
+            first = False
+            p.text = f"•  {insight}"
             p.font.size = Pt(12)
-            p.font.color.rgb = DARK_GRAY
-            p.space_after = Pt(8)
+            p.font.color.rgb = DARK
+            p.space_after = Pt(6)
 
     if ai_insights:
         p = tf.add_paragraph()
-        p.space_before = Pt(16)
+        p.space_before = Pt(14)
         p = tf.add_paragraph()
         p.text = "AI-Generated Insights:"
         p.font.size = Pt(12)
         p.font.bold = True
         p.font.color.rgb = BLUE
-        p.space_after = Pt(8)
+        p.space_after = Pt(6)
 
-        # Strip HTML tags from ai_insights
         import re
         clean = re.sub(r'<[^>]+>', '', ai_insights)
-        for line in clean.split('\n')[:10]:
+        for line in clean.split('\n')[:8]:
             line = line.strip()
             if line:
                 p = tf.add_paragraph()
                 p.text = line[:120]
                 p.font.size = Pt(10)
-                p.font.color.rgb = DARK_GRAY
+                p.font.color.rgb = GRAY
 
 
-def _add_slide_title(slide, title):
-    """Add a consistent title to a slide."""
-    txBox = slide.shapes.add_textbox(Inches(0.5), Inches(0.3), Inches(9), Inches(1))
-    tf = txBox.text_frame
-    p = tf.paragraphs[0]
-    p.text = title
-    p.font.size = Pt(24)
-    p.font.bold = True
-    p.font.color.rgb = BLUE
+def _slide_platform_table(prs, platform_type_data):
+    """Platform type coverage table."""
+    if not platform_type_data:
+        return
 
-    # Underline
-    line = slide.shapes.add_shape(1, Inches(0.5), Inches(1.1), Inches(9), Inches(0.03))
-    line.fill.solid()
-    line.fill.fore_color.rgb = BLUE
-    line.line.fill.background()
+    slide = prs.slides.add_slide(prs.slide_layouts[6])
+    _title_bar(slide, "Platform Type & Mode Coverage")
+
+    sorted_data = sorted(platform_type_data, key=lambda x: x['platform_type_mode'])
+    rows = min(len(sorted_data), 12) + 1
+    tbl = slide.shapes.add_table(rows, 5, Inches(0.3), Inches(1.2), Inches(9.4), Inches(0.4 * rows)).table
+    tbl.columns[0].width = Inches(3.0)
+    tbl.columns[1].width = Inches(1.5)
+    tbl.columns[2].width = Inches(1.5)
+    tbl.columns[3].width = Inches(1.5)
+    tbl.columns[4].width = Inches(1.9)
+
+    headers = ['Platform Type & Mode', 'Tests', 'Baseline', 'Coverage', 'Pass Ratio']
+    for ci, h in enumerate(headers):
+        cell = tbl.cell(0, ci)
+        cell.text = h
+        cell.fill.solid()
+        cell.fill.fore_color.rgb = BLUE
+        for par in cell.text_frame.paragraphs:
+            par.font.color.rgb = WHITE
+            par.font.size = Pt(10)
+            par.font.bold = True
+
+    for ri, p in enumerate(sorted_data[:12], 1):
+        tbl.cell(ri, 0).text = p['platform_type_mode']
+        tbl.cell(ri, 1).text = str(p['tests'])
+        tbl.cell(ri, 2).text = str(p['available_tests'])
+        tbl.cell(ri, 3).text = f"{p['coverage']:.1f}%"
+        tbl.cell(ri, 4).text = f"{p['pass_ratio']:.1f}%"
+        for ci in range(5):
+            for par in tbl.cell(ri, ci).text_frame.paragraphs:
+                par.font.size = Pt(9)
+        cov_color = RED if p['coverage'] < 70 else ORANGE if p['coverage'] < 90 else GREEN
+        for par in tbl.cell(ri, 3).text_frame.paragraphs:
+            par.font.color.rgb = cov_color
+            par.font.bold = True
+
+
+def fig_to_png(fig, width=1400, height=700):
+    """Convert a Plotly figure to PNG bytes. Returns None on failure."""
+    if fig is None:
+        return None
+    try:
+        return fig.to_image(format="png", width=width, height=height, scale=2)
+    except Exception:
+        return None
 
 
 def generate_ppt(report_data, output_path):
     """
     Generate a PowerPoint presentation from report data.
     
-    Args:
-        report_data: dict with all report sections
-        output_path: path to save the .pptx file
+    Chart images should be passed as PNG bytes under keys:
+        chart_automation, chart_bugs, chart_historical, chart_high_sev,
+        chart_sub_exec, chart_test_method, chart_xray_exec, chart_xray_method
     
-    Returns:
-        output_path if successful, None if python-pptx not available
+    Returns output_path if successful, None if python-pptx unavailable.
     """
     if not HAS_PPTX:
         print("⚠️  python-pptx not installed, skipping PPT generation")
         return None
 
     prs = Presentation()
-    prs.slide_width = Inches(10)
-    prs.slide_height = Inches(7.5)
+    prs.slide_width = SLIDE_W
+    prs.slide_height = SLIDE_H
 
-    # Slide 1: Title
-    _add_title_slide(
-        prs,
-        version=report_data.get('version', ''),
-        sprint_name=report_data.get('sprint_name', ''),
-        period=report_data.get('period', ''),
-        ci_run_start=report_data.get('ci_run_start'),
-    )
+    # 1. Title
+    _slide_title(prs, report_data['version'], report_data['sprint_name'],
+                 report_data['period'], report_data.get('ci_run_start'))
 
-    # Slide 2: Executive Summary
-    _add_summary_slide(prs, report_data)
+    # 2. Executive Summary
+    _slide_summary(prs, report_data)
 
-    # Slide 3: Bug Status
-    _add_bug_status_slide(prs, report_data)
+    # 3. Automation Status text
+    _slide_automation_summary(prs, report_data)
 
-    # Slide 4: Automation / CI
-    _add_automation_slide(prs, report_data)
+    # 4. Automation chart
+    _add_image_slide(prs, "Automation Results by Platform", report_data.get('chart_automation'))
 
-    # Slide 5: Charts (bug trend)
-    if report_data.get('bug_trend_fig_json'):
-        _add_chart_slide(prs, "Bug Trend", report_data['bug_trend_fig_json'])
+    # 5. Platform type table
+    _slide_platform_table(prs, report_data.get('platform_type_data'))
 
-    # Slide 6: Charts (automation)
-    if report_data.get('automation_fig_json'):
-        _add_chart_slide(prs, "Automation Results", report_data['automation_fig_json'])
+    # 6. Bug Status chart
+    _add_image_slide(prs, "Bug Status Distribution", report_data.get('chart_bugs'))
 
-    # Slide 7: Sub Test Execution
-    if report_data.get('sub_exec_total', 0) > 0:
-        _add_sub_exec_slide(prs, {
-            'total': report_data.get('sub_exec_total', 0),
-            'completed': report_data.get('sub_exec_completed', 0),
-            'in_progress': report_data.get('sub_exec_in_progress', 0),
-            'not_started': report_data.get('sub_exec_not_started', 0),
-            'xray': report_data.get('xray_summary', {}),
-        })
+    # 7. Historical Bug Trend
+    _add_image_slide(prs, "Historical Bug Trend", report_data.get('chart_historical'))
 
-    # Slide 8: Build Changelog
-    _add_changelog_slide(prs, report_data.get('build_changelogs'))
+    # 8. High Severity Trend
+    _add_image_slide(prs, "High/Critical Priority Bug Trend", report_data.get('chart_high_sev'))
 
-    # Slide 9: Insights
-    _add_insights_slide(prs, report_data.get('insights'), report_data.get('ai_insights'))
+    # 9. Bugs table
+    _slide_bugs_table(prs, report_data)
+
+    # 10. Sub Test Execution
+    _slide_sub_exec(prs, report_data)
+
+    # 11. Sub exec chart
+    _add_image_slide(prs, "Sub Test Execution Progress", report_data.get('chart_sub_exec'))
+
+    # 12. Xray charts
+    _add_image_slide(prs, "Xray Execution Rate", report_data.get('chart_xray_exec'))
+    _add_image_slide(prs, "Xray Test Method Distribution", report_data.get('chart_xray_method'))
+
+    # 13. Test Method chart
+    _add_image_slide(prs, "Test Method Distribution", report_data.get('chart_test_method'))
+
+    # 14. Build Changelog
+    _slide_changelog(prs, report_data.get('build_changelogs'))
+
+    # 15. Insights
+    _slide_insights(prs, report_data.get('insights'), report_data.get('ai_insights'))
 
     prs.save(output_path)
     return output_path

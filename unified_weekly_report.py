@@ -2372,6 +2372,8 @@ def main():
     # Create Xray execution rate charts
     xray_exec_rate_chart_html = ""
     xray_method_chart_html = ""
+    fig_xray_exec = None
+    fig_xray_method = None
     
     if sub_exec_xray_data['summary']['total_tests'] > 0:
         summary = sub_exec_xray_data['summary']
@@ -2995,6 +2997,8 @@ def main():
     else:
         ppt_file = output_file.replace('.html', '.pptx')
         try:
+            from ppt_report import fig_to_png
+
             report_data = {
                 'version': version,
                 'sprint_name': sprint.name,
@@ -3023,8 +3027,16 @@ def main():
                 'build_changelogs': build_changelogs,
                 'insights': insights,
                 'ai_insights': ai_insights,
-                'bug_trend_fig_json': fig_historical.to_json() if fig_historical else None,
-                'automation_fig_json': fig_automation.to_json() if automation_data['platform_data'] else None,
+                'platform_type_data': automation_data.get('platform_type_data'),
+                # Chart images as PNG bytes
+                'chart_automation': fig_to_png(fig_automation),
+                'chart_bugs': fig_to_png(fig_bugs),
+                'chart_historical': fig_to_png(fig_historical),
+                'chart_high_sev': fig_to_png(fig_high_sev),
+                'chart_sub_exec': fig_to_png(fig_sub_exec),
+                'chart_test_method': fig_to_png(fig_test_method),
+                'chart_xray_exec': fig_to_png(fig_xray_exec),
+                'chart_xray_method': fig_to_png(fig_xray_method),
             }
             result = generate_ppt(report_data, ppt_file)
             if result:
