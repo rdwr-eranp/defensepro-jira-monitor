@@ -2620,12 +2620,24 @@ def main():
         cp = coverage_progress
         # Estimation banner
         est_text = f"Estimated full coverage by <strong>{cp['estimated_date']}</strong> ({cp['days_to_complete']} days remaining)" if cp['estimated_date'] else "Insufficient data to estimate completion"
+        # Sprint end correlation
+        sprint_end_date = datetime.strptime(sprint_end[:10], '%Y-%m-%d')
+        days_to_sprint_end = (sprint_end_date - datetime.now()).days
+        if days_to_sprint_end < 0:
+            sprint_end_note = f'Sprint ended {abs(days_to_sprint_end)} day(s) ago'
+            projected_at_sprint_end = cp['current_coverage']
+        else:
+            projected_at_sprint_end = min(cp['current_coverage'] + cp['avg_daily_rate'] * days_to_sprint_end, 100.0)
+            sprint_end_note = f'{days_to_sprint_end} day(s) remaining in sprint'
+        projected_at_sprint_end = round(projected_at_sprint_end, 1)
+        sprint_coverage_color = '#4caf50' if projected_at_sprint_end >= 90 else '#ff9800' if projected_at_sprint_end >= 60 else '#f44336'
         # Progress bar color for pass ratio
         pr_color = '#4caf50' if cp['current_pass_ratio'] >= 90 else '#ff9800' if cp['current_pass_ratio'] >= 75 else '#f44336'
         coverage_progress_html = f'''
         <div style="background: #e3f2fd; border-left: 5px solid #1565c0; padding: 20px; margin: 20px 0; border-radius: 5px;">
             <h3 style="margin-top: 0; color: #1565c0;">📈 CI Coverage Progress & Velocity</h3>
             <p><strong>CI Start Date:</strong> {cp["ci_run_start"]} | <strong>Days Elapsed:</strong> {cp["total_days_elapsed"]} | <strong>Baseline:</strong> {cp["baseline_total"]:,} tests (from {cp["prev_version"]})</p>
+            <p style="margin: 8px 0; font-size: 14px;">🏁 <strong>Sprint End:</strong> {sprint_end[:10]} ({sprint_end_note}) | <strong>Projected coverage at sprint end:</strong> <span style="color: {sprint_coverage_color}; font-weight: bold;">{projected_at_sprint_end}%</span></p>
             <div style="display: flex; gap: 30px; margin: 15px 0;">
                 <div style="flex: 1;">
                     <p style="margin: 5px 0; font-size: 13px;"><strong>Coverage:</strong> {cp["current_coverage"]}%</p>
@@ -2717,7 +2729,7 @@ def main():
         {'<div class="alert-box" style="background-color: #fff3cd; border-left-color: #ffc107;"><strong>⚠️ Automation Bugs:</strong> ' + str(automation_data.get("automation_bugs_count", 0)) + ' bugs with automation origin opened during sprint - requires review.</div>' if automation_data.get("automation_bugs_count", 0) > 0 else ''}
 
         <div class="section-title">🤖 CI Iteration - Automation Status</div>
-        <p><strong>Tests executed during sprint:</strong> {automation_data['total_tests']} unique tests, {automation_data['total_executions']} total executions</p>
+        <p><strong>Tests executed during {'current CI cycle (from ' + ci_run_start + ')' if ci_run_start else 'sprint'}:</strong> {automation_data['total_tests']} unique tests, {automation_data['total_executions']} total executions</p>
         <p><strong>Overall results:</strong> Passed: {automation_data['passed']} | Failed: {automation_data['failed']} | Pass Ratio: {automation_data['pass_ratio']:.1f}%</p>
         {'<p><strong>Test Coverage:</strong> Overall: ' + f"{automation_data.get('overall_coverage', 0):.1f}%" + '</p>' if automation_data.get('overall_coverage', 0) > 0 else ''}
         
