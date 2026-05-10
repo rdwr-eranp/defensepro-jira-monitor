@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>Bug Analysis - DefensePro 10.13.1.0</title>
+    <script src="https://cdn.plot.ly/plotly-2.27.0.min.js"></script>
+    <style>
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; margin: 0; padding: 20px; background-color: #f5f5f5; color: #263238; }
+        .container { max-width: 1450px; margin: 0 auto; background-color: white; padding: 30px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
+        h1 { color: #1976d2; border-bottom: 3px solid #1976d2; padding-bottom: 10px; }
+        h2 { color: #424242; margin-top: 30px; border-bottom: 2px solid #e0e0e0; padding-bottom: 8px; }
+        .metadata { background-color: #e3f2fd; padding: 15px; border-left: 4px solid #1976d2; margin-bottom: 25px; line-height: 1.7; }
+        .summary-box { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 18px; margin: 25px 0; }
+        .metric-card { padding: 20px; border-radius: 8px; color: white; box-shadow: 0 2px 8px rgba(0,0,0,0.12); }
+        .metric-card.bugs { background: linear-gradient(135deg, #536dfe 0%, #3949ab 100%); }
+        .metric-card.dev { background: linear-gradient(135deg, #f57c00 0%, #e53935 100%); }
+        .metric-card.qa { background: linear-gradient(135deg, #039be5 0%, #00838f 100%); }
+        .metric-card.closed { background: linear-gradient(135deg, #2e7d32 0%, #00897b 100%); }
+        .metric-label { font-size: 14px; opacity: 0.92; margin-bottom: 8px; }
+        .metric-number { font-size: 36px; font-weight: 700; margin: 8px 0; }
+        .metric-detail { font-size: 13px; opacity: 0.92; line-height: 1.45; }
+        table { width: 100%; border-collapse: collapse; margin: 18px 0; box-shadow: 0 2px 4px rgba(0,0,0,0.05); }
+        th { background-color: #1976d2; color: white; padding: 11px; text-align: left; font-weight: 600; }
+        td { padding: 9px 11px; border-bottom: 1px solid #e0e0e0; vertical-align: top; }
+        tr:hover { background-color: #f9f9f9; }
+        .number { text-align: center; white-space: nowrap; }
+        .priority-blocker { background:#7b1fa2; color:white; padding:2px 8px; border-radius:4px; font-weight:700; white-space:nowrap; }
+        .priority-critical { background:#d32f2f; color:white; padding:2px 8px; border-radius:4px; font-weight:700; white-space:nowrap; }
+        .priority-high { background:#f57c00; color:white; padding:2px 8px; border-radius:4px; font-weight:700; white-space:nowrap; }
+        .priority-medium { background:#fbc02d; color:#333; padding:2px 8px; border-radius:4px; font-weight:700; white-space:nowrap; }
+        .priority-low { background:#0288d1; color:white; padding:2px 8px; border-radius:4px; font-weight:700; white-space:nowrap; }
+        .priority-very-low { background:#90a4ae; color:white; padding:2px 8px; border-radius:4px; font-weight:700; white-space:nowrap; }
+        .status-accepted { background:#43a047; color:white; padding:2px 8px; border-radius:4px; white-space:nowrap; }
+        .status-completed { background:#1e88e5; color:white; padding:2px 8px; border-radius:4px; white-space:nowrap; }
+        .status-open { background:#e53935; color:white; padding:2px 8px; border-radius:4px; white-space:nowrap; }
+        .alert-box { background-color: #fff3cd; border-left: 4px solid #ffc107; padding: 15px; margin: 20px 0; line-height: 1.7; }
+        .alert-box.info { background-color: #e3f2fd; border-left-color: #2196f3; }
+        .bar-container { background:#e0e0e0; border-radius:4px; overflow:hidden; height:18px; min-width:120px; }
+        .bar { height:18px; background:#1976d2; }
+        .grid-2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(440px, 1fr)); gap: 24px; }
+        .footer { margin-top: 40px; padding-top: 20px; border-top: 1px solid #e0e0e0; text-align: center; color: #666; font-size: 12px; }
+        a { color: #1976d2; text-decoration: none; font-weight: 600; }
+        a:hover { text-decoration: underline; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Bug Analysis - DefensePro 10.13.1.0</h1>
+        <div class="metadata">
+            <strong>Project:</strong> DP (DefensePro)<br>
+            <strong>Fix Version:</strong> 10.13.1.0<br>
+            <strong>JQL:</strong> <code>project = DP AND type = Bug AND fixVersion = "10.13.1.0"</code><br>
+            <strong>Report Generated:</strong> 2026-05-04<br>
+            <strong>Data Window:</strong> first bug created 2026-03-09, latest issue update 2026-05-04
+        </div>
+
+        <div class="summary-box">
+            <div class="metric-card bugs"><div class="metric-label">Total Bugs</div><div class="metric-number">48</div><div class="metric-detail">Release-scoped Jira bugs only</div></div>
+            <div class="metric-card dev"><div class="metric-label">Bugs on Dev</div><div class="metric-number">1</div><div class="metric-detail">In Progress / To-Do / None<br>3 total Blocker bugs</div></div>
+            <div class="metric-card qa"><div class="metric-label">Bugs on QA</div><div class="metric-number">0</div><div class="metric-detail">Completed and awaiting verification<br>0 high-severity QA item</div></div>
+            <div class="metric-card closed"><div class="metric-label">Accepted</div><div class="metric-number">47</div><div class="metric-detail">Closure rate: 97.9%<br>1 non-accepted bugs remain</div></div>
+        </div>
+
+        <div class="alert-box">
+            <strong>Release bug status:</strong> 1 of 48 bugs are not accepted: 1 on Dev and 0 on QA.
+            Current attention items: DP-112917 (Blocker, Dev).
+        </div>
+
+        <h2>Status Distribution</h2>
+        <div id="status-chart"></div>
+        <table style="max-width:760px;"><thead><tr><th>Status</th><th class="number">Count</th><th class="number">%</th><th>Distribution</th></tr></thead><tbody><tr><td>Accepted</td><td class="number">47</td><td class="number">97.9%</td><td><div class="bar-container"><div class="bar" style="width:97.9%;"></div></div></td></tr>
+<tr><td>None</td><td class="number">1</td><td class="number">2.1%</td><td><div class="bar-container"><div class="bar" style="width:2.1%;"></div></div></td></tr></tbody></table>
+
+        <h2>Priority Breakdown</h2>
+        <div id="priority-chart"></div>
+        <table style="max-width:760px;"><thead><tr><th>Priority</th><th class="number">Count</th><th class="number">%</th><th>Distribution</th></tr></thead><tbody><tr><td>Blocker</td><td class="number">3</td><td class="number">6.2%</td><td><div class="bar-container"><div class="bar" style="width:6.2%;"></div></div></td></tr>
+<tr><td>Critical</td><td class="number">6</td><td class="number">12.5%</td><td><div class="bar-container"><div class="bar" style="width:12.5%;"></div></div></td></tr>
+<tr><td>High</td><td class="number">15</td><td class="number">31.2%</td><td><div class="bar-container"><div class="bar" style="width:31.2%;"></div></div></td></tr>
+<tr><td>Medium</td><td class="number">10</td><td class="number">20.8%</td><td><div class="bar-container"><div class="bar" style="width:20.8%;"></div></div></td></tr>
+<tr><td>Low</td><td class="number">13</td><td class="number">27.1%</td><td><div class="bar-container"><div class="bar" style="width:27.1%;"></div></div></td></tr>
+<tr><td>Very Low</td><td class="number">1</td><td class="number">2.1%</td><td><div class="bar-container"><div class="bar" style="width:2.1%;"></div></div></td></tr></tbody></table>
+
+        <div class="grid-2">
+            <section><h2>Scrum Team Distribution</h2><table><thead><tr><th>Scrum Team</th><th class="number">Count</th><th class="number">%</th><th>Distribution</th></tr></thead><tbody><tr><td>DP - Ran Scrum</td><td class="number">24</td><td class="number">50.0%</td><td><div class="bar-container"><div class="bar" style="width:50.0%;"></div></div></td></tr>
+<tr><td>DP - Tal Scrum</td><td class="number">23</td><td class="number">47.9%</td><td><div class="bar-container"><div class="bar" style="width:47.9%;"></div></div></td></tr>
+<tr><td>AL-Itay</td><td class="number">1</td><td class="number">2.1%</td><td><div class="bar-container"><div class="bar" style="width:2.1%;"></div></div></td></tr></tbody></table></section>
+            <section><h2>Accepted Resolution Breakdown</h2><table><thead><tr><th>Resolution</th><th class="number">Count</th></tr></thead><tbody><tr><td>Fixed</td><td class="number">27</td></tr>
+<tr><td>Not a Defect</td><td class="number">7</td></tr>
+<tr><td>Not Reproducible</td><td class="number">4</td></tr>
+<tr><td>Accepted</td><td class="number">3</td></tr>
+<tr><td>Duplicate</td><td class="number">3</td></tr>
+<tr><td>Done</td><td class="number">2</td></tr>
+<tr><td>Will Never Be Fixed</td><td class="number">1</td></tr></tbody></table></section>
+        </div>
+
+        <h2>Open / Pending Bugs</h2>
+        <table><thead><tr><th>Key</th><th>Priority</th><th>Status</th><th>Resolution</th><th>Assignee</th><th>Team</th><th>Created</th><th>Updated</th><th>Summary</th></tr></thead><tbody><tr><td><a href="https://rwrnd.atlassian.net/browse/DP-112917" target="_blank">DP-112917</a></td><td><span class="priority-blocker">Blocker</span></td><td><span class="status-open">None</span></td><td>-</td><td>Itay Bekhouri</td><td>DP - Tal Scrum</td><td>2026-04-28</td><td>2026-04-30</td><td>Cloud Assist - Web DDoS | Signature flapping and &quot;Empty Pattern&quot; updates during high-volume POST attack (MRQ Device)</td></tr></tbody></table>
+
+        <h2>All Release Bugs (48)</h2>
+        <table><thead><tr><th>Key</th><th>Priority</th><th>Status</th><th>Resolution</th><th>Assignee</th><th>Team</th><th>Created</th><th>Updated</th><th>Summary</th></tr></thead><tbody><tr><td><a href="https://rwrnd.atlassian.net/browse/DP-112917" target="_blank">DP-112917</a></td><td><span class="priority-blocker">Blocker</span></td><td><span class="status-open">None</span></td><td>-</td><td>Itay Bekhouri</td><td>DP - Tal Scrum</td><td>2026-04-28</td><td>2026-04-30</td><td>Cloud Assist - Web DDoS | Signature flapping and &quot;Empty Pattern&quot; updates during high-volume POST attack (MRQ Device)</td></tr>
+<tr><td><a href="https://rwrnd.atlassian.net/browse/DP-112311" target="_blank">DP-112311</a></td><td><span class="priority-blocker">Blocker</span></td><td><span class="status-accepted">Accepted</span></td><td>Accepted</td><td>Tamer Ibraheem</td><td>DP - Tal Scrum</td><td>2026-03-26</td><td>2026-03-30</td><td>Cloud Assist Web DDoS | Attack traffic is not being blocked even though it matches the signature</td></tr>
+<tr><td><a href="https://rwrnd.atlassian.net/browse/DP-112575" target="_blank">DP-112575</a></td><td><span class="priority-blocker">Blocker</span></td><td><span class="status-accepted">Accepted</span></td><td>Fixed</td><td>Amit Hamdi</td><td>DP - Tal Scrum</td><td>2026-04-09</td><td>2026-04-14</td><td>Cloud Assist - Web DDoS | AppID rejected due to uppercase enforcement in the configuration phase</td></tr>
+<tr><td><a href="https://rwrnd.atlassian.net/browse/DP-112576" target="_blank">DP-112576</a></td><td><span class="priority-critical">Critical</span></td><td><span class="status-accepted">Accepted</span></td><td>Not Reproducible</td><td>Mohamed Abo Saleh</td><td>DP - Ran Scrum</td><td>2026-04-09</td><td>2026-05-04</td><td>Cloud Assist - Web DDoS | Sample connection fails to reconnect after timeout (Zero Windows Issue)</td></tr>
+<tr><td><a href="https://rwrnd.atlassian.net/browse/DP-112651" target="_blank">DP-112651</a></td><td><span class="priority-critical">Critical</span></td><td><span class="status-accepted">Accepted</span></td><td>Fixed</td><td>Amit Hamdi</td><td>DP - Ran Scrum</td><td>2026-04-14</td><td>2026-04-19</td><td>Cloud Assist | Signature Connection Fails and Stuck in &quot;Connecting&quot; State</td></tr>
+<tr><td><a href="https://rwrnd.atlassian.net/browse/DP-112789" target="_blank">DP-112789</a></td><td><span class="priority-critical">Critical</span></td><td><span class="status-accepted">Accepted</span></td><td>Fixed</td><td>Amit Hamdi</td><td>DP - Tal Scrum</td><td>2026-04-19</td><td>2026-04-30</td><td>Cloud Assist - Web DDoS | DP crashed once sending cloud assist attack using the MH-DDoS tool</td></tr>
+<tr><td><a href="https://rwrnd.atlassian.net/browse/DP-112881" target="_blank">DP-112881</a></td><td><span class="priority-critical">Critical</span></td><td><span class="status-accepted">Accepted</span></td><td>Duplicate</td><td>Jagadeesh Nunna</td><td>DP - Ran Scrum</td><td>2026-04-23</td><td>2026-04-28</td><td>Cloud Assist | Observed Frequent Cloud Disconnection using UHT device</td></tr>
+<tr><td><a href="https://rwrnd.atlassian.net/browse/DP-112887" target="_blank">DP-112887</a></td><td><span class="priority-critical">Critical</span></td><td><span class="status-accepted">Accepted</span></td><td>Fixed</td><td>Amit Hamdi</td><td>DP - Ran Scrum</td><td>2026-04-23</td><td>2026-04-30</td><td>Cloud Assist | Sample connection disconnects from the cloud after a long run</td></tr>
+<tr><td><a href="https://rwrnd.atlassian.net/browse/DP-112910" target="_blank">DP-112910</a></td><td><span class="priority-critical">Critical</span></td><td><span class="status-accepted">Accepted</span></td><td>Fixed</td><td>Amit Hamdi</td><td>DP - Tal Scrum</td><td>2026-04-26</td><td>2026-04-30</td><td>Cloud Assist | AX | Device crashed once sending MH-DDoS attack while web ddos protection is active</td></tr>
+<tr><td><a href="https://rwrnd.atlassian.net/browse/DP-112078" target="_blank">DP-112078</a></td><td><span class="priority-high">High</span></td><td><span class="status-accepted">Accepted</span></td><td>Fixed</td><td>Swapna Prabhakar</td><td>DP - Tal Scrum</td><td>2026-03-10</td><td>2026-03-25</td><td>Cloud Assist-AX | DD | Applicative Real Time Signature must be removed from TLS Handling screen</td></tr>
+<tr><td><a href="https://rwrnd.atlassian.net/browse/DP-112085" target="_blank">DP-112085</a></td><td><span class="priority-high">High</span></td><td><span class="status-accepted">Accepted</span></td><td>Fixed</td><td>Swapna Prabhakar</td><td>DP - Tal Scrum</td><td>2026-03-11</td><td>2026-03-24</td><td>Cloud Assist - AX | DD | Column names related to Cloud Assist must be named according to FRD</td></tr>
+<tr><td><a href="https://rwrnd.atlassian.net/browse/DP-112204" target="_blank">DP-112204</a></td><td><span class="priority-high">High</span></td><td><span class="status-accepted">Accepted</span></td><td>Fixed</td><td>Swapna Prabhakar</td><td>DP - Ran Scrum</td><td>2026-03-24</td><td>2026-03-25</td><td>Cloud Assist | DD| Unable to enable Cloud Assist service via DD</td></tr>
+<tr><td><a href="https://rwrnd.atlassian.net/browse/DP-112264" target="_blank">DP-112264</a></td><td><span class="priority-high">High</span></td><td><span class="status-accepted">Accepted</span></td><td>Accepted</td><td>Oshrat Walter</td><td>DP - Ran Scrum</td><td>2026-03-25</td><td>2026-03-31</td><td>Cloud Assist | Import Configuration file after Q1 WEB DDOS Cloud Assist displays Client Certificate that doesn&#x27;t exist - specific scenario</td></tr>
+<tr><td><a href="https://rwrnd.atlassian.net/browse/DP-112501" target="_blank">DP-112501</a></td><td><span class="priority-high">High</span></td><td><span class="status-accepted">Accepted</span></td><td>Fixed</td><td>Swapna Prabhakar</td><td>DP - Tal Scrum</td><td>2026-04-01</td><td>2026-04-13</td><td>Cloud Assist | Cloud Assist attack traffic is forwarded to server with Cloud assist action set to 200 OK</td></tr>
+<tr><td><a href="https://rwrnd.atlassian.net/browse/DP-112507" target="_blank">DP-112507</a></td><td><span class="priority-high">High</span></td><td><span class="status-accepted">Accepted</span></td><td>Fixed</td><td>Swapna Prabhakar</td><td>DP - Ran Scrum</td><td>2026-04-03</td><td>2026-04-14</td><td>Cloud Assist | Cloud Assist attack is not mitigated after disabling and enabling policy</td></tr>
+<tr><td><a href="https://rwrnd.atlassian.net/browse/DP-112529" target="_blank">DP-112529</a></td><td><span class="priority-high">High</span></td><td><span class="status-accepted">Accepted</span></td><td>Fixed</td><td>Harini Jeyaseelan</td><td>DP - Tal Scrum</td><td>2026-04-06</td><td>2026-04-14</td><td>DP 10.13.1 | Cloud assist AX | Changing cloud actions during traffic removes signature from AX and all the traffic gets forwarded</td></tr>
+<tr><td><a href="https://rwrnd.atlassian.net/browse/DP-112585" target="_blank">DP-112585</a></td><td><span class="priority-high">High</span></td><td><span class="status-accepted">Accepted</span></td><td>Not Reproducible</td><td>Jagadeesh Nunna</td><td>DP - Tal Scrum</td><td>2026-04-10</td><td>2026-04-24</td><td>Cloud Assist | signature is automatically updating without traffic and pushing from simulator</td></tr>
+<tr><td><a href="https://rwrnd.atlassian.net/browse/DP-112588" target="_blank">DP-112588</a></td><td><span class="priority-high">High</span></td><td><span class="status-accepted">Accepted</span></td><td>Not Reproducible</td><td>Swapna Prabhakar</td><td>DP - Tal Scrum</td><td>2026-04-10</td><td>2026-04-20</td><td>Cloud Assist -AX | Packet count is not updated correctly for Cloud Assist attack</td></tr>
+<tr><td><a href="https://rwrnd.atlassian.net/browse/DP-112590" target="_blank">DP-112590</a></td><td><span class="priority-high">High</span></td><td><span class="status-accepted">Accepted</span></td><td>Fixed</td><td>Mohamed Abo Saleh</td><td>DP - Tal Scrum</td><td>2026-04-10</td><td>2026-04-16</td><td>Cloud Assist Data Path | Attack Is Not Terminated After Trigger Signature Removal From Mockup Server</td></tr>
+<tr><td><a href="https://rwrnd.atlassian.net/browse/DP-112593" target="_blank">DP-112593</a></td><td><span class="priority-high">High</span></td><td><span class="status-accepted">Accepted</span></td><td>Not a Defect</td><td>Oshrat Walter</td><td>DP - Ran Scrum</td><td>2026-04-12</td><td>2026-04-23</td><td>Cloud Assist | It is possible to configure and enable Cloud Assist using expired certificates</td></tr>
+<tr><td><a href="https://rwrnd.atlassian.net/browse/DP-112633" target="_blank">DP-112633</a></td><td><span class="priority-high">High</span></td><td><span class="status-accepted">Accepted</span></td><td>Fixed</td><td>Mohamed Abo Saleh</td><td>DP - Tal Scrum</td><td>2026-04-13</td><td>2026-04-16</td><td>Cloud Assist Data Path | Attack Is Not Mitigated After Rebooting Device</td></tr>
+<tr><td><a href="https://rwrnd.atlassian.net/browse/DP-112771" target="_blank">DP-112771</a></td><td><span class="priority-high">High</span></td><td><span class="status-accepted">Accepted</span></td><td>Not Reproducible</td><td>Jagadeesh Nunna</td><td>DP - Tal Scrum</td><td>2026-04-16</td><td>2026-04-21</td><td>Cloud Assist | attack traffic is being forwarded when frame length is more than 1800</td></tr>
+<tr><td><a href="https://rwrnd.atlassian.net/browse/DP-112823" target="_blank">DP-112823</a></td><td><span class="priority-high">High</span></td><td><span class="status-accepted">Accepted</span></td><td>Fixed</td><td>Harini Jeyaseelan</td><td>DP - Ran Scrum</td><td>2026-04-21</td><td>2026-04-27</td><td>DP 10.13.1 | Cloud Assist Secure Path | Disable enable Cloud Assist under PSSLO removes signature but not hash</td></tr>
+<tr><td><a href="https://rwrnd.atlassian.net/browse/DP-112882" target="_blank">DP-112882</a></td><td><span class="priority-high">High</span></td><td><span class="status-accepted">Accepted</span></td><td>Duplicate</td><td>Tal Cohen</td><td>DP - Tal Scrum</td><td>2026-04-23</td><td>2026-04-28</td><td>Cloud Assist | attack traffic is being forwarded after 60min of attack and legit run</td></tr>
+<tr><td><a href="https://rwrnd.atlassian.net/browse/DP-112128" target="_blank">DP-112128</a></td><td><span class="priority-medium">Medium</span></td><td><span class="status-accepted">Accepted</span></td><td>Fixed</td><td>Amit Hamdi</td><td>DP - Ran Scrum</td><td>2026-03-15</td><td>2026-03-31</td><td>Certificate Repository | Wrong Key Size for Elliptic Curve displayed on certificate repository table</td></tr>
+<tr><td><a href="https://rwrnd.atlassian.net/browse/DP-112131" target="_blank">DP-112131</a></td><td><span class="priority-medium">Medium</span></td><td><span class="status-accepted">Accepted</span></td><td>Fixed</td><td>Amit Hamdi</td><td>DP - Ran Scrum</td><td>2026-03-15</td><td>2026-04-09</td><td>Certificate Repository | Confusing Certificate Terminology in Repository</td></tr>
+<tr><td><a href="https://rwrnd.atlassian.net/browse/DP-112420" target="_blank">DP-112420</a></td><td><span class="priority-medium">Medium</span></td><td><span class="status-accepted">Accepted</span></td><td>Not a Defect</td><td>Harini Jeyaseelan</td><td>DP - Tal Scrum</td><td>2026-03-31</td><td>2026-04-06</td><td>Cloud assist | Auditing log messages for enable/disable &#x27;web ddos cloud assist action&#x27; from CC is not correct</td></tr>
+<tr><td><a href="https://rwrnd.atlassian.net/browse/DP-112520" target="_blank">DP-112520</a></td><td><span class="priority-medium">Medium</span></td><td><span class="status-accepted">Accepted</span></td><td>Fixed</td><td>Itay Bekhouri</td><td>AL-Itay</td><td>2026-04-06</td><td>2026-04-15</td><td>Legacy | AXL | Cloud Assist Data Path | Samples And Statistics Are Sent Without Configuring PSSLO</td></tr>
+<tr><td><a href="https://rwrnd.atlassian.net/browse/DP-112587" target="_blank">DP-112587</a></td><td><span class="priority-medium">Medium</span></td><td><span class="status-accepted">Accepted</span></td><td>Not a Defect</td><td>Mohamed Abo Saleh</td><td>DP - Tal Scrum</td><td>2026-04-10</td><td>2026-04-15</td><td>Cloud Assist Data Path | DPE-Stats Shows Traffic Forwarded While Other Statistical Counters Shows Traffic Dropped - Under Attack</td></tr>
+<tr><td><a href="https://rwrnd.atlassian.net/browse/DP-112591" target="_blank">DP-112591</a></td><td><span class="priority-medium">Medium</span></td><td><span class="status-accepted">Accepted</span></td><td>Fixed</td><td>Mohamed Abo Saleh</td><td>DP - Ran Scrum</td><td>2026-04-11</td><td>2026-04-16</td><td>Cloud Assist Secure Path | DP Crashes Enabling Logs And Uploading Corrupt Signature</td></tr>
+<tr><td><a href="https://rwrnd.atlassian.net/browse/DP-112769" target="_blank">DP-112769</a></td><td><span class="priority-medium">Medium</span></td><td><span class="status-accepted">Accepted</span></td><td>Done</td><td>Mohamed Abo Saleh</td><td>DP - Ran Scrum</td><td>2026-04-16</td><td>2026-04-20</td><td>Cloud Assist Secure Path | Invalid Connection Statistics In Signature Info Command After Adding New PSSLO&#x27;S</td></tr>
+<tr><td><a href="https://rwrnd.atlassian.net/browse/DP-112786" target="_blank">DP-112786</a></td><td><span class="priority-medium">Medium</span></td><td><span class="status-accepted">Accepted</span></td><td>Not a Defect</td><td>Mohamed Abo Saleh</td><td>DP - Ran Scrum</td><td>2026-04-19</td><td>2026-04-19</td><td>Cloud Assist Secure Path | DP Repeatedly Attempts To Reconnect Indefinitely After The Server Is Shut Down</td></tr>
+<tr><td><a href="https://rwrnd.atlassian.net/browse/DP-112880" target="_blank">DP-112880</a></td><td><span class="priority-medium">Medium</span></td><td><span class="status-accepted">Accepted</span></td><td>Duplicate</td><td>Jagadeesh Nunna</td><td>DP - Ran Scrum</td><td>2026-04-23</td><td>2026-04-23</td><td>Cloud Assist | mgmt_ssl ERROR]: TCPG1_send returned error 9 SSL address 0x7f31200219b0 TCP block address 0x7f330dbc4918 size 785</td></tr>
+<tr><td><a href="https://rwrnd.atlassian.net/browse/DP-112885" target="_blank">DP-112885</a></td><td><span class="priority-medium">Medium</span></td><td><span class="status-accepted">Accepted</span></td><td>Not a Defect</td><td>Tal Cohen</td><td>DP - Tal Scrum</td><td>2026-04-23</td><td>2026-04-23</td><td>Cloud Assist | Strange files are being created on the file system under /tmp directory: &quot;Shm_CQueue_000_022_SX2W.lock&quot;</td></tr>
+<tr><td><a href="https://rwrnd.atlassian.net/browse/DP-112065" target="_blank">DP-112065</a></td><td><span class="priority-low">Low</span></td><td><span class="status-accepted">Accepted</span></td><td>Fixed</td><td>Daniel Bar-On</td><td>DP - Tal Scrum</td><td>2026-03-09</td><td>2026-03-15</td><td>Cloud Assist - AX | Configuration  | AX - Log file - Webddos-Conf tag flags issue - device-uuid value is empty as not expected. fqdn-endpoint flag value is wrong.</td></tr>
+<tr><td><a href="https://rwrnd.atlassian.net/browse/DP-112115" target="_blank">DP-112115</a></td><td><span class="priority-low">Low</span></td><td><span class="status-accepted">Accepted</span></td><td>Fixed</td><td>Mohamed Abo Saleh</td><td>DP - Ran Scrum</td><td>2026-03-12</td><td>2026-04-13</td><td>Cloud Assist Secure Path | Error Messages When Closing Connection</td></tr>
+<tr><td><a href="https://rwrnd.atlassian.net/browse/DP-112119" target="_blank">DP-112119</a></td><td><span class="priority-low">Low</span></td><td><span class="status-accepted">Accepted</span></td><td>Not a Defect</td><td>Daniel Bar-On</td><td>DP - Tal Scrum</td><td>2026-03-12</td><td>2026-03-23</td><td>Cloud Assist - AX | Configuration  | AX - Log file - Tunnel XML Tag. The flag:  secure-path-policy-name value is not as expected</td></tr>
+<tr><td><a href="https://rwrnd.atlassian.net/browse/DP-112263" target="_blank">DP-112263</a></td><td><span class="priority-low">Low</span></td><td><span class="status-accepted">Accepted</span></td><td>Fixed</td><td>Oshrat Walter</td><td>DP - Ran Scrum</td><td>2026-03-25</td><td>2026-04-23</td><td>Cloud Assist | It is not possible to configure via UI the web-ddos cloud assist as enabled and Configure certificates in parallel (DD multiple scalar issue)</td></tr>
+<tr><td><a href="https://rwrnd.atlassian.net/browse/DP-112265" target="_blank">DP-112265</a></td><td><span class="priority-low">Low</span></td><td><span class="status-accepted">Accepted</span></td><td>Accepted</td><td>Oshrat Walter</td><td>DP - Ran Scrum</td><td>2026-03-26</td><td>2026-03-31</td><td>Cloud Assist |Relevant Units must be added in CC Cloud Assist window for Peacetime Sampling Rate and Attack Sampling Rate</td></tr>
+<tr><td><a href="https://rwrnd.atlassian.net/browse/DP-112381" target="_blank">DP-112381</a></td><td><span class="priority-low">Low</span></td><td><span class="status-accepted">Accepted</span></td><td>Fixed</td><td>Mohamed Abo Saleh</td><td>DP - Ran Scrum</td><td>2026-03-26</td><td>2026-03-29</td><td>Cloud Assist | Unable To Configure Cloud Endpoint With Max Length FQDN (128)</td></tr>
+<tr><td><a href="https://rwrnd.atlassian.net/browse/DP-112508" target="_blank">DP-112508</a></td><td><span class="priority-low">Low</span></td><td><span class="status-accepted">Accepted</span></td><td>Fixed</td><td>Mohamed Abo Saleh</td><td>DP - Ran Scrum</td><td>2026-04-03</td><td>2026-04-13</td><td>Cloud Assist | Timer Does Not Reset In Connection Info Samples/Statistics When Disabling The Feature</td></tr>
+<tr><td><a href="https://rwrnd.atlassian.net/browse/DP-112509" target="_blank">DP-112509</a></td><td><span class="priority-low">Low</span></td><td><span class="status-accepted">Accepted</span></td><td>Fixed</td><td>Mohamed Abo Saleh</td><td>DP - Ran Scrum</td><td>2026-04-03</td><td>2026-04-13</td><td>Cloud Assist | Connection State Is Connected While We Are In Recovery State</td></tr>
+<tr><td><a href="https://rwrnd.atlassian.net/browse/DP-112586" target="_blank">DP-112586</a></td><td><span class="priority-low">Low</span></td><td><span class="status-accepted">Accepted</span></td><td>Not a Defect</td><td>Swapna Prabhakar</td><td>DP - Tal Scrum</td><td>2026-04-10</td><td>2026-04-13</td><td>Cloud Assist AX| RTM  drop stats are not updated with Cloud Assist attack</td></tr>
+<tr><td><a href="https://rwrnd.atlassian.net/browse/DP-112592" target="_blank">DP-112592</a></td><td><span class="priority-low">Low</span></td><td><span class="status-accepted">Accepted</span></td><td>Fixed</td><td>Mohamed Abo Saleh</td><td>DP - Ran Scrum</td><td>2026-04-12</td><td>2026-04-15</td><td>Cloud Assist Secure Path | Connection Re-Establishment Fails While Simulating Timeout Scenario</td></tr>
+<tr><td><a href="https://rwrnd.atlassian.net/browse/DP-112756" target="_blank">DP-112756</a></td><td><span class="priority-low">Low</span></td><td><span class="status-accepted">Accepted</span></td><td>Fixed</td><td>Mohamed Abo Saleh</td><td>DP - Tal Scrum</td><td>2026-04-16</td><td>2026-04-20</td><td>Cloud Assist Data Path | Different Outputs For Same Command</td></tr>
+<tr><td><a href="https://rwrnd.atlassian.net/browse/DP-112796" target="_blank">DP-112796</a></td><td><span class="priority-low">Low</span></td><td><span class="status-accepted">Accepted</span></td><td>Will Never Be Fixed</td><td>Swapna Prabhakar</td><td>DP - Tal Scrum</td><td>2026-04-20</td><td>2026-04-20</td><td>Cloud Assist AX | Server certificate is lost and appx_dxp ERROR displayed after Rollback to 10.12.0.1</td></tr>
+<tr><td><a href="https://rwrnd.atlassian.net/browse/DP-112914" target="_blank">DP-112914</a></td><td><span class="priority-low">Low</span></td><td><span class="status-accepted">Accepted</span></td><td>Done</td><td>Daniel Bar-On</td><td>DP - Ran Scrum</td><td>2026-04-27</td><td>2026-04-29</td><td>Cloud Assist - AX | Functionality | Device after reboot tries to start connections, before the engines are up</td></tr>
+<tr><td><a href="https://rwrnd.atlassian.net/browse/DP-112801" target="_blank">DP-112801</a></td><td><span class="priority-very-low">Very Low</span></td><td><span class="status-accepted">Accepted</span></td><td>Fixed</td><td>Mohamed Abo Saleh</td><td>DP - Ran Scrum</td><td>2026-04-20</td><td>2026-04-23</td><td>Cloud Assist Secure Path | Invalid Latency Statistics</td></tr></tbody></table>
+
+        <h2>Key Observations</h2>
+        <div class="alert-box info"><ul style="line-height:1.8; margin:0;">
+            <li><strong>Closure:</strong> 47 of 48 bugs are Accepted (97.9%).</li>
+            <li><strong>Remaining risk:</strong> 1 bug on Dev and 0 bug on QA.</li>
+            <li><strong>High severity load:</strong> 3 Blocker, 6 Critical, and 15 High bugs were filed for this release.</li>
+            <li><strong>Team distribution:</strong> Ran Scrum owns 24 bugs, Tal Scrum owns 23, and AL-Itay owns 1.</li>
+        </ul></div>
+
+        <h2>Recommendation</h2>
+        <div class="alert-box"><strong>CONDITIONAL GO</strong> - release readiness from the bug perspective depends on resolving: DP-112917 (Blocker, Dev).</div>
+
+        <div class="footer">Bug Analysis Report - DefensePro 10.13.1.0 - Generated 2026-05-04</div>
+    </div>
+    <script>
+        Plotly.newPlot('status-chart', [{ type: 'bar', x: ['Accepted', 'Completed / QA', 'None / Dev'], y: [47, 0, 1], marker: { color: ['#43a047', '#1e88e5', '#e53935'] }, text: [47, 0, 1], textposition: 'outside' }], { title: 'Bug Status Distribution - 10.13.1.0', height: 420, yaxis: { title: 'Bug Count', rangemode: 'tozero' } }, { responsive: true });
+        Plotly.newPlot('priority-chart', [{ type: 'bar', x: ["Blocker", "Critical", "High", "Medium", "Low", "Very Low"], y: [3, 6, 15, 10, 13, 1], marker: { color: ['#7b1fa2', '#d32f2f', '#f57c00', '#fbc02d', '#0288d1', '#90a4ae'] }, text: [3, 6, 15, 10, 13, 1], textposition: 'outside' }], { title: 'Priority Distribution - 10.13.1.0', height: 420, yaxis: { title: 'Bug Count', rangemode: 'tozero' } }, { responsive: true });
+    </script>
+</body>
+</html>

@@ -497,20 +497,55 @@ def connect_to_postgres():
     return conn
 
 def get_current_sprint(jira, board_id=None):
-    """Get current active sprint"""
+    """Get current active sprint
+    
+    Strategy:
+    1. Check all boards for active sprints with 'DP-' prefix (e.g., DP-2026-PI2-S10)
+    2. Fall back to boards with 'DP' or 'DefensePro' in name
+    3. Last resort: use calculated dates (last 2 weeks)
+    """
     if board_id is None:
         boards = jira.boards()
+        
+        # Strategy 1: Check ALL boards for active sprints with DP- prefix
+        print(f"   Checking {len(boards)} boards for active DP sprints...")
+        for board in boards:
+            try:
+                sprints = jira.sprints(board.id, state='active')
+                for sprint in sprints:
+                    if sprint.name.startswith('DP-'):
+                        print(f"   ✓ Found DP sprint on board '{board.name}' (ID: {board.id})")
+                        print(f"   ✓ Using active sprint: {sprint.name}")
+                        print(f"   ✓ Dates: {sprint.startDate[:10]} to {sprint.endDate[:10]}")
+                        return sprint
+            except Exception as e:
+                # Some boards may not support sprints
+                continue
+        
+        # Strategy 2: Fall back to DP/DefensePro board name matching
+        print("   No DP-prefixed sprint found, trying board name matching...")
         for board in boards:
             if 'DP' in board.name or 'DefensePro' in board.name:
                 board_id = board.id
+                print(f"   Found board: {board.name} (ID: {board.id})")
                 break
-    
-    if board_id:
-        sprints = jira.sprints(board_id, state='active')
-        if sprints:
-            return sprints[0]
+        
+        if board_id:
+            try:
+                sprints = jira.sprints(board_id, state='active')
+                if sprints:
+                    print(f"   ✓ Using active sprint: {sprints[0].name}")
+                    return sprints[0]
+                else:
+                    print("   ⚠️  WARNING: Board found but no active sprint exists")
+            except Exception as e:
+                print(f"   ⚠️  WARNING: Error getting sprints from board: {e}")
+        else:
+            print("   ⚠️  WARNING: No board with 'DP' or 'DefensePro' in name found")
     
     # Fallback: use last 2 weeks
+    print("   ⚠️  FALLING BACK to calculated sprint dates (last 2 weeks)")
+    print("   ⚠️  This may not reflect the actual sprint in Jira!")
     end_date = datetime.now()
     start_date = end_date - timedelta(weeks=2)
     
@@ -2036,11 +2071,13 @@ def main():
     print("✓ Connected\n")
     
     # Get sprint info
+    print("Getting sprint information from Jira...")
     sprint = get_current_sprint(jira)
     sprint_start = sprint_start_override if sprint_start_override else sprint.startDate
     sprint_end = sprint_end_override if sprint_end_override else sprint.endDate
     if sprint_start_override or sprint_end_override:
         print(f"Using overridden sprint period: {sprint_start[:10]} to {sprint_end[:10]}")
+    print()  # blank line for readability
 
     # When CI_RUN_START is set, use it as the effective start for CI metrics
     ci_start = ci_run_start if ci_run_start else sprint_start

@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>CI Automation Report - 10.14.0.0 - 2026-05-03</title>
+    <style>
+        body { font-family: 'Segoe UI', Tahoma, sans-serif; margin: 20px; background: #f5f5f5; }
+        .container { max-width: 1400px; margin: 0 auto; background: white; padding: 30px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); border-radius: 8px; }
+        h1 { color: #003366; border-bottom: 3px solid #0070c0; padding-bottom: 10px; }
+        h2 { color: #0070c0; margin-top: 30px; border-bottom: 2px solid #e0e0e0; padding-bottom: 8px; }
+        .metadata { color: #666; font-size: 14px; margin-bottom: 20px; background: #f9f9f9; padding: 15px; border-radius: 5px; }
+        .summary-box { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 20px; margin: 30px 0; }
+        .metric-card { padding: 20px; border-radius: 8px; text-align: center; box-shadow: 0 2px 5px rgba(0,0,0,0.1); color: white; }
+        .metric-number { font-size: 42px; font-weight: bold; margin: 10px 0; }
+        .metric-label { font-size: 16px; font-weight: 500; }
+        .metric-detail { font-size: 13px; margin-top: 8px; opacity: 0.9; }
+        table { width: 100%; border-collapse: collapse; margin: 20px 0; }
+        th { background-color: #003366; color: white; padding: 12px; text-align: left; }
+        td { padding: 10px 12px; border-bottom: 1px solid #e0e0e0; }
+        tr:hover { background-color: #f9f9f9; }
+        .alert { background: #fff3cd; border-left: 5px solid #ffc107; padding: 15px; margin: 15px 0; border-radius: 4px; }
+        .alert-danger { background: #f8d7da; border-left-color: #dc3545; }
+        .footer { margin-top: 40px; padding-top: 20px; border-top: 1px solid #e0e0e0; text-align: center; color: #666; font-size: 12px; }
+    </style>
+</head>
+<body>
+<div class="container">
+    <h1>🤖 CI Automation Test Results Report</h1>
+    <div class="metadata">
+        <strong>Version:</strong> 10.14.0.0<br>
+        <strong>Report Date:</strong> 2026-05-03<br>
+        <strong>Builds:</strong> 38,39,40<br>
+        <strong>Baseline (Coverage):</strong> 10.13.0.0<br>
+        <strong>Generated:</strong> 2026-05-06 16:57:52
+    </div>
+
+    <div class="summary-box">
+        <div class="metric-card" style="background: linear-gradient(135deg, #0070c0, #3399dd);">
+            <div class="metric-label">Unique Tests Executed</div>
+            <div class="metric-number">1040</div>
+            <div class="metric-detail">1955 total executions across platforms</div>
+        </div>
+        <div class="metric-card" style="background: linear-gradient(135deg, #f44336, #f44336dd);">
+            <div class="metric-label">Overall Coverage</div>
+            <div class="metric-number">3.9%</div>
+            <div class="metric-detail">vs 10.13.0.0 baseline</div>
+        </div>
+        <div class="metric-card" style="background: linear-gradient(135deg, #4caf50, #66bb6a);">
+            <div class="metric-label">Passed</div>
+            <div class="metric-number">1773</div>
+            <div class="metric-detail">90.7% pass ratio</div>
+        </div>
+        <div class="metric-card" style="background: linear-gradient(135deg, #f44336, #ef5350);">
+            <div class="metric-label">Failed</div>
+            <div class="metric-number">182</div>
+            <div class="metric-detail">79 failed on ALL platforms</div>
+        </div>
+    </div>
+
+    <div class="alert alert-danger"><strong>⚠️ Critical:</strong> 79 tests failed on ALL platforms.</div>
+    
+
+    
+
+    <h2>Platform Type & Mode Breakdown</h2>
+    <p>Coverage calculated against 10.13.0.0 baseline. New tests shown separately.</p>
+    <table>
+        <thead>
+            <tr>
+                <th>Platform Type - Mode</th>
+                <th>Tests Executed</th>
+                <th>Available (Baseline)</th>
+                <th>Coverage</th>
+                <th>Passed</th>
+                <th>Failed</th>
+                <th>Pass Ratio</th>
+            </tr>
+        </thead>
+        <tbody>
+            
+        <tr>
+            <td><strong>EZchip - Routing</strong></td>
+            <td style="text-align:center;">219</td>
+            <td style="text-align:center;">7097</td>
+            <td style="text-align:center; color:#f44336; font-weight:bold;">3.1%</td>
+            <td style="text-align:center;">171</td>
+            <td style="text-align:center;">48</td>
+            <td style="text-align:center; color:#ff9800; font-weight:bold;">78.1%</td>
+        </tr>
+        <tr>
+            <td><strong>EZchip - Transparent</strong></td>
+            <td style="text-align:center;">222</td>
+            <td style="text-align:center;">7160</td>
+            <td style="text-align:center; color:#f44336; font-weight:bold;">3.1%</td>
+            <td style="text-align:center;">216</td>
+            <td style="text-align:center;">6</td>
+            <td style="text-align:center; color:#4caf50; font-weight:bold;">97.3%</td>
+        </tr>
+        <tr>
+            <td><strong>FPGA - Routing</strong></td>
+            <td style="text-align:center;">137</td>
+            <td style="text-align:center;">7311</td>
+            <td style="text-align:center; color:#f44336; font-weight:bold;">1.9%</td>
+            <td style="text-align:center;">130</td>
+            <td style="text-align:center;">7</td>
+            <td style="text-align:center; color:#4caf50; font-weight:bold;">94.9%</td>
+        </tr>
+        <tr>
+            <td><strong>FPGA - Transparent</strong></td>
+            <td style="text-align:center;">238</td>
+            <td style="text-align:center;">7482</td>
+            <td style="text-align:center; color:#f44336; font-weight:bold;">3.2%</td>
+            <td style="text-align:center;">183</td>
+            <td style="text-align:center;">55</td>
+            <td style="text-align:center; color:#ff9800; font-weight:bold;">76.9%</td>
+        </tr>
+        <tr>
+            <td><strong>Software - Routing</strong></td>
+            <td style="text-align:center;">501</td>
+            <td style="text-align:center;">7246</td>
+            <td style="text-align:center; color:#f44336; font-weight:bold;">6.9%</td>
+            <td style="text-align:center;">474</td>
+            <td style="text-align:center;">27</td>
+            <td style="text-align:center; color:#4caf50; font-weight:bold;">94.6%</td>
+        </tr>
+        <tr>
+            <td><strong>Software - Transparent</strong></td>
+            <td style="text-align:center;">387</td>
+            <td style="text-align:center;">7364</td>
+            <td style="text-align:center; color:#f44336; font-weight:bold;">5.3%</td>
+            <td style="text-align:center;">366</td>
+            <td style="text-align:center;">21</td>
+            <td style="text-align:center; color:#4caf50; font-weight:bold;">94.6%</td>
+        </tr>
+        </tbody>
+    </table>
+
+    <h2>Visual Analysis</h2>
+    <div>                        <script>window.PlotlyConfig = {MathJaxConfig: 'local'};</script>
+        <script charset="utf-8" src="https://cdn.plot.ly/plotly-3.5.0.min.js" integrity="sha256-fHbNLP+GlIXN+efbQec78UkemUz3NJp7UmfGxC1tNxs=" crossorigin="anonymous"></script>                <div id="chart" class="plotly-graph-div" style="height:450px; width:100%;"></div>            <script>                window.PLOTLYENV=window.PLOTLYENV || {};                                if (document.getElementById("chart")) {                    Plotly.newPlot(                        "chart",                        [{"marker":{"color":["#f44336","#f44336","#f44336","#f44336","#f44336","#f44336"]},"name":"Coverage %","text":["3.1%","3.1%","1.9%","3.2%","6.9%","5.3%"],"textposition":"auto","x":["EZchip - Routing","EZchip - Transparent","FPGA - Routing","FPGA - Transparent","Software - Routing","Software - Transparent"],"y":[3.0858109060166266,3.100558659217877,1.8738886609218983,3.1809676557070303,6.914159536295887,5.255296034763715],"type":"bar","xaxis":"x","yaxis":"y"},{"marker":{"color":["#ff9800","#4caf50","#4caf50","#ff9800","#4caf50","#4caf50"]},"name":"Pass Ratio %","text":["78.1%","97.3%","94.9%","76.9%","94.6%","94.6%"],"textposition":"auto","x":["EZchip - Routing","EZchip - Transparent","FPGA - Routing","FPGA - Transparent","Software - Routing","Software - Transparent"],"y":[78.08219178082192,97.2972972972973,94.8905109489051,76.89075630252101,94.61077844311377,94.57364341085271],"type":"bar","xaxis":"x2","yaxis":"y2"}],                        {"template":{"data":{"histogram2dcontour":[{"type":"histogram2dcontour","colorbar":{"outlinewidth":0,"ticks":""},"colorscale":[[0.0,"#0d0887"],[0.1111111111111111,"#46039f"],[0.2222222222222222,"#7201a8"],[0.3333333333333333,"#9c179e"],[0.4444444444444444,"#bd3786"],[0.5555555555555556,"#d8576b"],[0.6666666666666666,"#ed7953"],[0.7777777777777778,"#fb9f3a"],[0.8888888888888888,"#fdca26"],[1.0,"#f0f921"]]}],"choropleth":[{"type":"choropleth","colorbar":{"outlinewidth":0,"ticks":""}}],"histogram2d":[{"type":"histogram2d","colorbar":{"outlinewidth":0,"ticks":""},"colorscale":[[0.0,"#0d0887"],[0.1111111111111111,"#46039f"],[0.2222222222222222,"#7201a8"],[0.3333333333333333,"#9c179e"],[0.4444444444444444,"#bd3786"],[0.5555555555555556,"#d8576b"],[0.6666666666666666,"#ed7953"],[0.7777777777777778,"#fb9f3a"],[0.8888888888888888,"#fdca26"],[1.0,"#f0f921"]]}],"heatmap":[{"type":"heatmap","colorbar":{"outlinewidth":0,"ticks":""},"colorscale":[[0.0,"#0d0887"],[0.1111111111111111,"#46039f"],[0.2222222222222222,"#7201a8"],[0.3333333333333333,"#9c179e"],[0.4444444444444444,"#bd3786"],[0.5555555555555556,"#d8576b"],[0.6666666666666666,"#ed7953"],[0.7777777777777778,"#fb9f3a"],[0.8888888888888888,"#fdca26"],[1.0,"#f0f921"]]}],"contourcarpet":[{"type":"contourcarpet","colorbar":{"outlinewidth":0,"ticks":""}}],"contour":[{"type":"contour","colorbar":{"outlinewidth":0,"ticks":""},"colorscale":[[0.0,"#0d0887"],[0.1111111111111111,"#46039f"],[0.2222222222222222,"#7201a8"],[0.3333333333333333,"#9c179e"],[0.4444444444444444,"#bd3786"],[0.5555555555555556,"#d8576b"],[0.6666666666666666,"#ed7953"],[0.7777777777777778,"#fb9f3a"],[0.8888888888888888,"#fdca26"],[1.0,"#f0f921"]]}],"surface":[{"type":"surface","colorbar":{"outlinewidth":0,"ticks":""},"colorscale":[[0.0,"#0d0887"],[0.1111111111111111,"#46039f"],[0.2222222222222222,"#7201a8"],[0.3333333333333333,"#9c179e"],[0.4444444444444444,"#bd3786"],[0.5555555555555556,"#d8576b"],[0.6666666666666666,"#ed7953"],[0.7777777777777778,"#fb9f3a"],[0.8888888888888888,"#fdca26"],[1.0,"#f0f921"]]}],"mesh3d":[{"type":"mesh3d","colorbar":{"outlinewidth":0,"ticks":""}}],"scatter":[{"fillpattern":{"fillmode":"overlay","size":10,"solidity":0.2},"type":"scatter"}],"parcoords":[{"type":"parcoords","line":{"colorbar":{"outlinewidth":0,"ticks":""}}}],"scatterpolargl":[{"type":"scatterpolargl","marker":{"colorbar":{"outlinewidth":0,"ticks":""}}}],"bar":[{"error_x":{"color":"#2a3f5f"},"error_y":{"color":"#2a3f5f"},"marker":{"line":{"color":"#E5ECF6","width":0.5},"pattern":{"fillmode":"overlay","size":10,"solidity":0.2}},"type":"bar"}],"scattergeo":[{"type":"scattergeo","marker":{"colorbar":{"outlinewidth":0,"ticks":""}}}],"scatterpolar":[{"type":"scatterpolar","marker":{"colorbar":{"outlinewidth":0,"ticks":""}}}],"histogram":[{"marker":{"pattern":{"fillmode":"overlay","size":10,"solidity":0.2}},"type":"histogram"}],"scattergl":[{"type":"scattergl","marker":{"colorbar":{"outlinewidth":0,"ticks":""}}}],"scatter3d":[{"type":"scatter3d","line":{"colorbar":{"outlinewidth":0,"ticks":""}},"marker":{"colorbar":{"outlinewidth":0,"ticks":""}}}],"scattermap":[{"type":"scattermap","marker":{"colorbar":{"outlinewidth":0,"ticks":""}}}],"scattermapbox":[{"type":"scattermapbox","marker":{"colorbar":{"outlinewidth":0,"ticks":""}}}],"scatterternary":[{"type":"scatterternary","marker":{"colorbar":{"outlinewidth":0,"ticks":""}}}],"scattercarpet":[{"type":"scattercarpet","marker":{"colorbar":{"outlinewidth":0,"ticks":""}}}],"carpet":[{"aaxis":{"endlinecolor":"#2a3f5f","gridcolor":"white","linecolor":"white","minorgridcolor":"white","startlinecolor":"#2a3f5f"},"baxis":{"endlinecolor":"#2a3f5f","gridcolor":"white","linecolor":"white","minorgridcolor":"white","startlinecolor":"#2a3f5f"},"type":"carpet"}],"table":[{"cells":{"fill":{"color":"#EBF0F8"},"line":{"color":"white"}},"header":{"fill":{"color":"#C8D4E3"},"line":{"color":"white"}},"type":"table"}],"barpolar":[{"marker":{"line":{"color":"#E5ECF6","width":0.5},"pattern":{"fillmode":"overlay","size":10,"solidity":0.2}},"type":"barpolar"}],"pie":[{"automargin":true,"type":"pie"}]},"layout":{"autotypenumbers":"strict","colorway":["#636efa","#EF553B","#00cc96","#ab63fa","#FFA15A","#19d3f3","#FF6692","#B6E880","#FF97FF","#FECB52"],"font":{"color":"#2a3f5f"},"hovermode":"closest","hoverlabel":{"align":"left"},"paper_bgcolor":"white","plot_bgcolor":"#E5ECF6","polar":{"bgcolor":"#E5ECF6","angularaxis":{"gridcolor":"white","linecolor":"white","ticks":""},"radialaxis":{"gridcolor":"white","linecolor":"white","ticks":""}},"ternary":{"bgcolor":"#E5ECF6","aaxis":{"gridcolor":"white","linecolor":"white","ticks":""},"baxis":{"gridcolor":"white","linecolor":"white","ticks":""},"caxis":{"gridcolor":"white","linecolor":"white","ticks":""}},"coloraxis":{"colorbar":{"outlinewidth":0,"ticks":""}},"colorscale":{"sequential":[[0.0,"#0d0887"],[0.1111111111111111,"#46039f"],[0.2222222222222222,"#7201a8"],[0.3333333333333333,"#9c179e"],[0.4444444444444444,"#bd3786"],[0.5555555555555556,"#d8576b"],[0.6666666666666666,"#ed7953"],[0.7777777777777778,"#fb9f3a"],[0.8888888888888888,"#fdca26"],[1.0,"#f0f921"]],"sequentialminus":[[0.0,"#0d0887"],[0.1111111111111111,"#46039f"],[0.2222222222222222,"#7201a8"],[0.3333333333333333,"#9c179e"],[0.4444444444444444,"#bd3786"],[0.5555555555555556,"#d8576b"],[0.6666666666666666,"#ed7953"],[0.7777777777777778,"#fb9f3a"],[0.8888888888888888,"#fdca26"],[1.0,"#f0f921"]],"diverging":[[0,"#8e0152"],[0.1,"#c51b7d"],[0.2,"#de77ae"],[0.3,"#f1b6da"],[0.4,"#fde0ef"],[0.5,"#f7f7f7"],[0.6,"#e6f5d0"],[0.7,"#b8e186"],[0.8,"#7fbc41"],[0.9,"#4d9221"],[1,"#276419"]]},"xaxis":{"gridcolor":"white","linecolor":"white","ticks":"","title":{"standoff":15},"zerolinecolor":"white","automargin":true,"zerolinewidth":2},"yaxis":{"gridcolor":"white","linecolor":"white","ticks":"","title":{"standoff":15},"zerolinecolor":"white","automargin":true,"zerolinewidth":2},"scene":{"xaxis":{"backgroundcolor":"#E5ECF6","gridcolor":"white","linecolor":"white","showbackground":true,"ticks":"","zerolinecolor":"white","gridwidth":2},"yaxis":{"backgroundcolor":"#E5ECF6","gridcolor":"white","linecolor":"white","showbackground":true,"ticks":"","zerolinecolor":"white","gridwidth":2},"zaxis":{"backgroundcolor":"#E5ECF6","gridcolor":"white","linecolor":"white","showbackground":true,"ticks":"","zerolinecolor":"white","gridwidth":2}},"shapedefaults":{"line":{"color":"#2a3f5f"}},"annotationdefaults":{"arrowcolor":"#2a3f5f","arrowhead":0,"arrowwidth":1},"geo":{"bgcolor":"white","landcolor":"#E5ECF6","subunitcolor":"white","showland":true,"showlakes":true,"lakecolor":"white"},"title":{"x":0.05},"mapbox":{"style":"light"}}},"xaxis":{"anchor":"y","domain":[0.0,0.45]},"yaxis":{"anchor":"x","domain":[0.0,1.0],"range":[0,105]},"xaxis2":{"anchor":"y2","domain":[0.55,1.0]},"yaxis2":{"anchor":"x2","domain":[0.0,1.0],"range":[0,105]},"annotations":[{"font":{"size":16},"showarrow":false,"text":"Test Coverage by Platform Type & Mode","x":0.225,"xanchor":"center","xref":"paper","y":1.0,"yanchor":"bottom","yref":"paper"},{"font":{"size":16},"showarrow":false,"text":"Pass Ratio by Platform Type & Mode","x":0.775,"xanchor":"center","xref":"paper","y":1.0,"yanchor":"bottom","yref":"paper"},{"showarrow":false,"text":"Target: 90%","x":1,"xanchor":"right","xref":"x domain","y":90,"yanchor":"bottom","yref":"y"},{"showarrow":false,"text":"Target: 90%","x":1,"xanchor":"right","xref":"x2 domain","y":90,"yanchor":"bottom","yref":"y2"}],"shapes":[{"line":{"color":"green","dash":"dash"},"type":"line","x0":0,"x1":1,"xref":"x domain","y0":90,"y1":90,"yref":"y"},{"line":{"color":"green","dash":"dash"},"type":"line","x0":0,"x1":1,"xref":"x2 domain","y0":90,"y1":90,"yref":"y2"}],"title":{"text":"CI Automation Results - 10.14.0.0 (2026-05-03)","x":0.5},"height":450,"showlegend":false},                        {"responsive": true}                    )                };            </script>        </div>
+
+    <h2>❌ Tests Failed on ALL Platforms (79)</h2>
+    <table><thead><tr><th>Test Name</th><th>Platforms Failed</th></tr></thead><tbody><tr><td>DP 10.13.0.0 | SNAT | Additional Scenarios | Config changes during Traffic</td><td style='text-align:center;'>3</td></tr><tr><td>DP 10.13.0.0 | SNAT | Functional | SNAT Pool Exhaustion - Alerts </td><td style='text-align:center;'>3</td></tr><tr><td>DP 10.13.0.0 | SNAT | Functional | Verify the challenges behaviour (SYN/HTTPS)</td><td style='text-align:center;'>3</td></tr><tr><td>Granular BDoS RL per Controller - Configuration - Config and policy import/export</td><td style='text-align:center;'>3</td></tr><tr><td>(O)New Reporting Mechanism (Per Policy) - Functionality-Legit and Attack- Full session decryption enabled- Traffic Filters  HTTPS-Decrypted attack</td><td style='text-align:center;'>2</td></tr><tr><td>PA - Traffic Analysis - Additional Scenarios - Multiple Anamoly on same packet</td><td style='text-align:center;'>2</td></tr><tr><td>Traffic Analysis (AppSec) - Basic Functionality - Src-Country Metric</td><td style='text-align:center;'>2</td></tr><tr><td>Traffic Analysis (CL) - Additional Scenarios - Different Risk Value</td><td style='text-align:center;'>2</td></tr><tr><td>Traffic Analysis (CL) - Additional Scenarios - Different Suspend Actions</td><td style='text-align:center;'>2</td></tr><tr><td>Traffic Analysis (CL) - Basic Functionality - Metrics - Source IP</td><td style='text-align:center;'>2</td></tr><tr><td>Traffic Analysis (HTTPS ) - Additional Scenarios - One policy with a few attacks</td><td style='text-align:center;'>2</td></tr><tr><td>Traffic Analysis (Packet Anomaly) - Basic Functionality - Source Country Metric</td><td style='text-align:center;'>2</td></tr><tr><td>Traffic Analysis (Packet Anomaly) - Basic Functionality - Source IP Metric</td><td style='text-align:center;'>2</td></tr><tr><td>40M DNS FQDN entries - UHT | Install license AppDNSProtection AppProtection, Reboot &amp; Banner</td><td style='text-align:center;'>1</td></tr><tr><td>40M DNS FQDN entries - UHT | Install license CDDoS AppProtection, Reboot &amp; Banner</td><td style='text-align:center;'>1</td></tr><tr><td>ACL for MNG - Basic Functionality - Status Disabled</td><td style='text-align:center;'>1</td></tr><tr><td>ACL for MNG - Configuration - Q1, Download and Upload Configuration</td><td style='text-align:center;'>1</td></tr><tr><td>Additional Scenarios- Rate limit with few policy &amp; same profile</td><td style='text-align:center;'>1</td></tr><tr><td>(A) New DNS Flow - Full CRUD with AppDNSProtection20M License Support - Functionality - Advanced - Import max automatic FQDNs during learning</td><td style='text-align:center;'>1</td></tr><tr><td>(A) New DNS Flow - Full CRUD with AppProtection20M License Support - Functionality - Advanced - Import/Export max automatic FQDNs during learning</td><td style='text-align:center;'>1</td></tr><tr><td>(A) New DNS Flow - Full CRUD with AppProtection30M License Support - Functionality - Advanced - Import / Export max automatic FQDNs during learning</td><td style='text-align:center;'>1</td></tr><tr><td>(A) New DNS Flow - Full CRUD with AppProtection40M License Support - Functionality - Advanced - Import max automatic FQDNs during learning</td><td style='text-align:center;'>1</td></tr><tr><td>(A) New DNS Flow - Full CRUD with AppProtection40M License Support - Functionality - Advanced - Learning during attack</td><td style='text-align:center;'>1</td></tr><tr><td>Anti Scan | Attack | TCP Port Scan | Low Sensitivity</td><td style='text-align:center;'>1</td></tr><tr><td>AntiScan_bypass|Functionality|Change profile action from Block and Report to Report Only and vice versa</td><td style='text-align:center;'>1</td></tr><tr><td>AntiScan_bypass|Functionality|Profile set to block and report with allowed IP</td><td style='text-align:center;'>1</td></tr><tr><td>AntiScan_bypass|Functionality|Profile set to report only with allowed IP</td><td style='text-align:center;'>1</td></tr><tr><td>Anti-scan Ignore Traffic with Open Sessions | Basic Functionality | UDP traffic</td><td style='text-align:center;'>1</td></tr><tr><td>Anti-scan Ignore Traffic with Open Sessions | Configuration | Reboot</td><td style='text-align:center;'>1</td></tr><tr><td>Application License | Core DNS Protection | Functionality | Compliance Checks | AppStdProtection License</td><td style='text-align:center;'>1</td></tr></tbody></table><p><em>...and 49 more</em></p>
+
+    <h2>🐛 Automation Bugs (0)</h2>
+    <p style='color:#4caf50;'>✓ No automation bugs opened on this date.</p>
+
+    <div class="footer">
+        <p>Generated from PostgreSQL (10.185.20.124) | Version: 10.14.0.0 | Date: 2026-05-03</p>
+    </div>
+</div>
+</body>
+</html>
