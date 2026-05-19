@@ -38,11 +38,20 @@ print("STEP 1: Enter Version")
 version = input("Version (e.g., 10.12.0.0) [default: 10.12.0.0]: ").strip() or "10.12.0.0"
 print(f"✓ Version set to: {version}\n")
 
-# Derive prior versions dynamically (e.g. 10.13.0.0 → ['10.12.0.0', '10.11.0.0'])
-_vparts = version.split('.')
-_major, _minor = int(_vparts[0]), int(_vparts[1])
-_ver_suffix = '.'.join(_vparts[2:])
-prior_versions = [f'{_major}.{v}.{_ver_suffix}' for v in range(_minor - 1, max(_minor - 3, -1), -1)]
+def get_prior_versions(version):
+    """Return baseline versions for coverage comparison."""
+    parts = [int(part) for part in version.split('.')]
+    major, minor = parts[0], parts[1]
+    tail = parts[2:] or [0, 0]
+    zero_tail = '.'.join('0' for _ in tail)
+
+    if any(tail):
+        return [f'{major}.{minor}.{zero_tail}']
+
+    return [f'{major}.{v}.{zero_tail}' for v in range(minor - 1, max(minor - 3, -1), -1)]
+
+
+prior_versions = get_prior_versions(version)
 prior_versions_sql = "', '".join(prior_versions)
 
 print("STEP 2: Enter Build Numbers")
@@ -145,7 +154,7 @@ WHERE t.id NOT IN (SELECT test_id FROM prior_tests)
 """
 df_skipped = pd.read_sql(query_skipped_tests, conn)
 skipped_test_ids = df_skipped['id'].tolist()
-print(f"\nConsistently skipped tests (not run on 10.12.0.0 or 10.11.0.0): {len(skipped_test_ids):,}")
+print(f"\nConsistently skipped tests (not run on {' or '.join(prior_versions)}): {len(skipped_test_ids):,}")
 
 # Get total tests in system (excluding consistently skipped)
 query_total_tests = "SELECT COUNT(*) as total FROM test"
@@ -637,7 +646,7 @@ print("-" * 80)
 print(df_build.to_string(index=False))
 
 # Query 5: Newly added test cases (executed on current version but not in the immediate prior version)
-prior_version = prior_versions[0]  # e.g. 10.12.0.0 when running 10.13.0.0
+prior_version = prior_versions[0]
 query_new_tests = f"""
 WITH v1_tests AS (
     SELECT DISTINCT test_id

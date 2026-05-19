@@ -32,10 +32,16 @@ KNOWN_PLATFORMS = ('UHT','MRQP','MR2','ESXI','KVM','VL3','HT2','MRQ_X','MRQX')
 
 
 def get_prior_versions(version):
-    """Return the two preceding minor versions, e.g. 10.13.0.0 → ['10.12.0.0','10.11.0.0']."""
-    parts = version.split('.')
-    major, minor, rest = int(parts[0]), int(parts[1]), '.'.join(parts[2:])
-    return [f'{major}.{v}.{rest}' for v in range(minor - 1, max(minor - 3, -1), -1)]
+    """Return baseline versions for coverage comparison."""
+    parts = [int(part) for part in version.split('.')]
+    major, minor = parts[0], parts[1]
+    tail = parts[2:] or [0, 0]
+    zero_tail = '.'.join('0' for _ in tail)
+
+    if any(tail):
+        return [f'{major}.{minor}.{zero_tail}']
+
+    return [f'{major}.{v}.{zero_tail}' for v in range(minor - 1, max(minor - 3, -1), -1)]
 
 
 # ---------------------------------------------------------------------------

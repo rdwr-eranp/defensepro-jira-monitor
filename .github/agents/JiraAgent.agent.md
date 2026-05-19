@@ -65,6 +65,11 @@ When replaying issue changelogs to determine status at a specific date:
 - Applies to: initial test_id query, execution results query, available tests query, and failed tests query
 - For versions < 10.14.0.0, QDoS tests remain included as before
 
+**Coverage Baseline Version Selection:**
+- Patch/maintenance releases must use the latest base major release from the same train as the baseline
+- Example: version `10.13.0.2` uses baseline `10.13.0.0`, not `10.12.0.2`
+- Base releases still compare against prior base releases (for example, `10.14.0.0` uses `10.13.0.0`)
+
 ### Working Scripts Library
 
 **Bug Trend Analysis:**

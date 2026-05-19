@@ -656,10 +656,16 @@ def get_builds_for_version(conn, version, sprint_start, sprint_end):
     return ','.join([str(b) for b in builds])
 
 def get_previous_version(version):
-    """Derive the previous release version by decrementing the minor number (e.g., 10.13.0.0 → 10.12.0.0)"""
-    parts = version.split('.')
-    parts[1] = str(int(parts[1]) - 1)
-    return '.'.join(parts)
+    """Derive the baseline version for coverage comparison."""
+    parts = [int(part) for part in version.split('.')]
+    major, minor = parts[0], parts[1]
+    tail = parts[2:] or [0, 0]
+    zero_tail = '.'.join('0' for _ in tail)
+
+    if any(tail):
+        return f'{major}.{minor}.{zero_tail}'
+
+    return f'{major}.{minor - 1}.{zero_tail}'
 
 
 def get_sprint_list(jira, n_closed=4):

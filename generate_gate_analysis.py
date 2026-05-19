@@ -36,6 +36,24 @@ print("STEP 1: Enter Version")
 version = input("Version (e.g., 10.12.0.0) [default: 10.12.0.0]: ").strip() or "10.12.0.0"
 print(f"✓ Version set to: {version}\n")
 
+
+def get_prior_versions(version):
+    """Return baseline versions for coverage comparison."""
+    parts = [int(part) for part in version.split('.')]
+    major, minor = parts[0], parts[1]
+    tail = parts[2:] or [0, 0]
+    zero_tail = '.'.join('0' for _ in tail)
+
+    if any(tail):
+        return [f'{major}.{minor}.{zero_tail}']
+
+    return [f'{major}.{v}.{zero_tail}' for v in range(minor - 1, max(minor - 3, -1), -1)]
+
+
+prior_versions = get_prior_versions(version)
+prior_versions_sql = "', '".join(prior_versions)
+prior_versions_display = ' OR '.join(prior_versions)
+
 print("STEP 2: Enter Build Numbers")
 print("  Format options:")
 print("    - Range: 95-106 (includes all builds from 95 to 106)")
@@ -83,23 +101,17 @@ except Exception as e:
     print(f"❌ Database connection error: {e}")
     exit(1)
 
-# Get consistently skipped tests (never executed on both 10.12.0.0 and 10.11.0.0)
+# Get consistently skipped tests (never executed on baseline versions)
 print("Calculating adjusted baseline (excluding consistently skipped tests)...")
-query_skipped_tests = """
-WITH v1_tests AS (
+query_skipped_tests = f"""
+WITH prior_tests AS (
     SELECT DISTINCT test_id
     FROM test_execution
-    WHERE version = '10.12.0.0'
-),
-v2_tests AS (
-    SELECT DISTINCT test_id
-    FROM test_execution
-    WHERE version = '10.11.0.0'
+    WHERE version IN ('{prior_versions_sql}')
 )
 SELECT t.id
 FROM test t
-WHERE t.id NOT IN (SELECT test_id FROM v1_tests)
-  AND t.id NOT IN (SELECT test_id FROM v2_tests)
+WHERE t.id NOT IN (SELECT test_id FROM prior_tests)
 """
 df_skipped = pd.read_sql(query_skipped_tests, conn)
 skipped_test_ids = df_skipped['id'].tolist()
@@ -179,7 +191,7 @@ available_tests AS (
     FROM test_execution te
     JOIN device d ON te.device_id = d.id
     JOIN profile p ON te.profile_id = p.id
-    WHERE te.version IN ('10.12.0.0', '10.11.0.0')
+    WHERE te.version IN ('{prior_versions_sql}')
         AND te.mode = 'regression'
         AND d.platform IS NOT NULL
         AND d.platform != 'Unknown'
@@ -243,7 +255,7 @@ available_tests AS (
         COUNT(DISTINCT te.test_id) as available_tests
     FROM test_execution te
     JOIN device d ON te.device_id = d.id
-    WHERE te.version IN ('10.12.0.0', '10.11.0.0')
+    WHERE te.version IN ('{prior_versions_sql}')
         AND te.mode = 'regression'
         AND d.platform IS NOT NULL
         AND d.platform != 'Unknown'
@@ -338,7 +350,7 @@ available_tests AS (
     SELECT COUNT(DISTINCT te.test_id) as total_available
     FROM test_execution te
     JOIN device d ON te.device_id = d.id
-    WHERE te.version IN ('{version}', '10.11.0.0')
+    WHERE te.version IN ('{prior_versions_sql}')
         AND te.mode = 'regression'
         AND d.platform NOT IN ('MRQ', 'MR', 'VL2')
 ),
@@ -767,7 +779,7 @@ html_content = f"""<!DOCTYPE html>
     <div class="header">
         <h1>🎯 Release Gate Analysis</h1>
         <p>DefensePro {version} - Builds {builds_display}</p>
-        <p><strong>Baseline:</strong> Platform-specific available tests (executed on 10.12.0.0 OR 10.11.0.0)</p>
+        <p><strong>Baseline:</strong> Platform-specific available tests (executed on {prior_versions_display})</p>
         <div class="status">
             {'✅ READY FOR RELEASE' if overall_passed else '❌ NOT READY FOR RELEASE'}
         </div>
