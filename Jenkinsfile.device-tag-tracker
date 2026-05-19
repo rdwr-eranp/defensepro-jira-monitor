@@ -177,12 +177,17 @@ pipeline {
                         }
                     }
 
-                    def summary = new groovy.json.JsonSlurperClassic().parseText(readFile("${env.DEVICE_TAG_OUTPUT_DIR}/device_tag_summary.json"))
-                    env.DEVICE_TAG_CHANGE_COUNT = summary.changed_count.toString()
-                    env.DEVICE_TAG_TAG_CHANGE_COUNT = summary.tag_changed_count.toString()
-                    env.DEVICE_TAG_ADDED_COUNT = summary.added_device_count.toString()
-                    env.DEVICE_TAG_REMOVED_COUNT = summary.removed_device_count.toString()
-                    env.DEVICE_TAG_BASELINE_CREATED = summary.baseline_created.toString()
+                    def summaryText = readFile("${env.DEVICE_TAG_OUTPUT_DIR}/device_tag_summary.properties")
+                    def summaryValue = { key ->
+                        def prefix = "${key}="
+                        def line = summaryText.readLines().find { it.startsWith(prefix) }
+                        return line ? line.substring(prefix.length()).trim() : '0'
+                    }
+                    env.DEVICE_TAG_CHANGE_COUNT = summaryValue('changed_count')
+                    env.DEVICE_TAG_TAG_CHANGE_COUNT = summaryValue('tag_changed_count')
+                    env.DEVICE_TAG_ADDED_COUNT = summaryValue('added_device_count')
+                    env.DEVICE_TAG_REMOVED_COUNT = summaryValue('removed_device_count')
+                    env.DEVICE_TAG_BASELINE_CREATED = summaryValue('baseline_created')
                     currentBuild.description = "Device tag changes: ${env.DEVICE_TAG_CHANGE_COUNT}"
                 }
             }

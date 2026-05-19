@@ -375,6 +375,21 @@ def write_html(path, devices, comparison, summary):
     path.write_text(html, encoding="utf-8")
 
 
+def write_summary_properties(path, summary):
+    keys = [
+        "changed_count",
+        "tag_changed_count",
+        "added_device_count",
+        "removed_device_count",
+        "baseline_created",
+        "total_devices",
+        "tagged_devices",
+        "untagged_devices",
+    ]
+    lines = [f"{key}={summary[key]}" for key in keys]
+    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+
 def main():
     parser = argparse.ArgumentParser(description="Track changes in public.device.tag values")
     parser.add_argument("--state-dir", default=os.getenv("DEVICE_TAG_STATE_DIR", "device_tag_tracking_state"))
@@ -401,6 +416,7 @@ def main():
     markdown_path = output_dir / "device_tag_report.md"
     html_path = output_dir / "device_tag_report.html"
     summary_path = output_dir / "device_tag_summary.json"
+    summary_properties_path = output_dir / "device_tag_summary.properties"
 
     write_snapshot(current_snapshot_path, current_devices)
     write_snapshot(dated_snapshot_path, current_devices)
@@ -420,6 +436,7 @@ def main():
         "history_rows_added": history_rows_added,
     })
     summary_path.write_text(json.dumps(summary, indent=2), encoding="utf-8")
+    write_summary_properties(summary_properties_path, summary)
 
     write_snapshot(latest_snapshot_path, current_devices)
 
