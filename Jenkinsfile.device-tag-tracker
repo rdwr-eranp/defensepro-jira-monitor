@@ -133,38 +133,46 @@ pipeline {
                         }
                     } catch (Exception passwordCredentialError) {
                         echo "Jenkins secret text credential 'pg-password' was not available: ${passwordCredentialError.message}"
-                        echo "Trying username/password credential 'postgres-user'."
+                        echo "Trying username/password credential 'pg-password'."
                         try {
-                            withCredentials([usernamePassword(credentialsId: 'postgres-user', usernameVariable: 'PG_USER_CRED', passwordVariable: 'PG_PASSWORD')]) {
+                            withCredentials([usernamePassword(credentialsId: 'pg-password', usernameVariable: 'PG_USER_CRED', passwordVariable: 'PG_PASSWORD')]) {
                                 runTrackerWithPostgresUserCredential()
                             }
-                        } catch (Exception usernameCredentialError) {
-                            echo "Jenkins username/password credential 'postgres-user' was not available: ${usernameCredentialError.message}"
-                            echo "Trying .env fallback for local/debug Jenkins runs."
-                            if (isUnix()) {
-                                sh """
-                                    . venv/bin/activate
-                                    if [ -f .env ]; then
-                                        set -a; . ./.env; set +a
-                                    else
-                                        echo "ERROR: No PostgreSQL credentials found. Create Jenkins credential 'pg-password' as Secret text, or 'postgres-user' as Username with password, or provide a .env file."
-                                        exit 1
-                                    fi
-                                    export DEVICE_TAG_OUTPUT_DIR='${env.DEVICE_TAG_OUTPUT_DIR}'
-                                    python3 device_tag_tracker.py --state-dir '${params.STATE_DIR}' --output-dir '${env.DEVICE_TAG_OUTPUT_DIR}'
-                                """
-                            } else {
-                                bat """
-                                    call venv\\Scripts\\activate.bat
-                                    if exist .env (
-                                        for /f "usebackq tokens=* delims=" %%a in (".env") do set "%%a"
-                                    ) else (
-                                        echo ERROR: No PostgreSQL credentials found. Create Jenkins credential 'pg-password' as Secret text, or 'postgres-user' as Username with password, or provide a .env file.
-                                        exit /b 1
-                                    )
-                                    set DEVICE_TAG_OUTPUT_DIR=${env.DEVICE_TAG_OUTPUT_DIR}
-                                    python device_tag_tracker.py --state-dir "${params.STATE_DIR}" --output-dir "${env.DEVICE_TAG_OUTPUT_DIR}"
-                                """
+                        } catch (Exception pgPasswordUsernameCredentialError) {
+                            echo "Jenkins username/password credential 'pg-password' was not available: ${pgPasswordUsernameCredentialError.message}"
+                            echo "Trying username/password credential 'postgres-user'."
+                            try {
+                                withCredentials([usernamePassword(credentialsId: 'postgres-user', usernameVariable: 'PG_USER_CRED', passwordVariable: 'PG_PASSWORD')]) {
+                                    runTrackerWithPostgresUserCredential()
+                                }
+                            } catch (Exception usernameCredentialError) {
+                                echo "Jenkins username/password credential 'postgres-user' was not available: ${usernameCredentialError.message}"
+                                echo "Trying .env fallback for local/debug Jenkins runs."
+                                if (isUnix()) {
+                                    sh """
+                                        . venv/bin/activate
+                                        if [ -f .env ]; then
+                                            set -a; . ./.env; set +a
+                                        else
+                                            echo "ERROR: No PostgreSQL credentials found. Create Jenkins credential 'pg-password' as Secret text or Username with password, create 'postgres-user' as Username with password, or provide a .env file."
+                                            exit 1
+                                        fi
+                                        export DEVICE_TAG_OUTPUT_DIR='${env.DEVICE_TAG_OUTPUT_DIR}'
+                                        python3 device_tag_tracker.py --state-dir '${params.STATE_DIR}' --output-dir '${env.DEVICE_TAG_OUTPUT_DIR}'
+                                    """
+                                } else {
+                                    bat """
+                                        call venv\\Scripts\\activate.bat
+                                        if exist .env (
+                                            for /f "usebackq tokens=* delims=" %%a in (".env") do set "%%a"
+                                        ) else (
+                                            echo ERROR: No PostgreSQL credentials found. Create Jenkins credential 'pg-password' as Secret text or Username with password, create 'postgres-user' as Username with password, or provide a .env file.
+                                            exit /b 1
+                                        )
+                                        set DEVICE_TAG_OUTPUT_DIR=${env.DEVICE_TAG_OUTPUT_DIR}
+                                        python device_tag_tracker.py --state-dir "${params.STATE_DIR}" --output-dir "${env.DEVICE_TAG_OUTPUT_DIR}"
+                                    """
+                                }
                             }
                         }
                     }
