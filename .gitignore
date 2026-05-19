@@ -55,6 +55,10 @@ sub_test_execution_*.html
 open_bugs_report.html
 auto_potential_below80_*.html
 critical_failures_*.xlsx
+device_tag_map.csv
+device_tag_map.md
+device_tag_tracking/
+device_tag_tracking_state/
 *.log
 *.txt
 ~$*.pptx
@@ -68,6 +72,7 @@ query_*.py
 explore_*.py
 analyze_*.py
 investigate_*.py
+inspect_*.py
 search_*.py
 quick_*.py
 find_*.py

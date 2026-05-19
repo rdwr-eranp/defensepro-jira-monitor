@@ -72,6 +72,42 @@ Add the following credentials in Jenkins (Manage Jenkins → Credentials → Sys
 4. **Build Triggers:**
    - Already configured in Jenkinsfile: Every Monday at 9:00 AM
 
+## Dedicated Device Tag Tracking Job
+
+Use this job when you want to track changes to device labels stored in PostgreSQL `public.device.tag` independently from the weekly release report.
+
+1. **New Item:**
+   - Name: `DefensePro-Device-Tag-Tracker`
+   - Type: Pipeline
+
+2. **Pipeline Configuration:**
+   - **Definition:** Pipeline script from SCM
+   - **SCM:** Git
+   - **Repository URL:** `https://github.com/rdwr-eranp/defensepro-jira-monitor.git`
+   - **Branch:** `*/main`
+   - **Script Path:** `Jenkinsfile.device-tag-tracker`
+
+3. **Schedule:**
+   - The dedicated Jenkinsfile runs every hour using `cron('H * * * *')`.
+
+4. **Credentials:**
+   - Requires Jenkins secret text credential `pg-password` for the PostgreSQL password.
+   - The job uses these database defaults unless overridden in the environment: `PG_HOST=10.185.20.124`, `PG_PORT=5432`, `PG_DATABASE=results`, `PG_USER=postgres`.
+
+5. **How tracking works:**
+   - `device_tag_tracker.py` reads the current `public.device` map.
+   - The job stores the previous snapshot in `device_tag_tracking_state/latest_device_tags.csv` inside the Jenkins workspace.
+   - Every detected change is appended to `device_tag_tracking_state/device_tag_change_history.csv` with the run timestamp, Jenkins job name, build number, build URL, device ID/IP, old tag, and new tag.
+   - Each run compares the current snapshot to the previous one and archives `device_tag_tracking/device_tag_report.html`, `device_tag_tracking/device_tag_report.md`, `device_tag_tracking/device_tag_changes.csv`, and JSON/CSV snapshots.
+   - The Jenkinsfile fingerprints archived artifacts and keeps the last 365 builds/artifact sets by default, so the Jenkins build history becomes the trace timeline.
+   - If the Jenkins workspace is deleted, the next run creates a fresh baseline and reports changes from the following run onward.
+
+6. **Parameters:**
+   - `EMAIL_RECIPIENTS`: Recipients for change notifications.
+   - `STATE_DIR`: Persistent snapshot directory. Keep the default unless the workspace is routinely cleaned.
+   - `SEND_EMAIL_ON_NO_CHANGE`: Send a status email even when no changes are detected.
+   - `FAIL_ON_CHANGE`: Mark the build as failed after artifacts/email are produced when tag changes are detected.
+
 ## Step 3: Configure Email Notifications
 
 1. **Manage Jenkins → Configure System → Extended E-mail Notification:**

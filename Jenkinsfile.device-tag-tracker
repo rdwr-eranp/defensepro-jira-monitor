@@ -1,0 +1,221 @@
+pipeline {
+    // Dedicated DefensePro device tag tracking job
+    agent { label 'built-in' }
+
+    options {
+        buildDiscarder(logRotator(numToKeepStr: '365', artifactNumToKeepStr: '365'))
+    }
+
+    triggers {
+        // Run once per hour at a stable Jenkins-assigned minute
+        cron('H * * * *')
+    }
+
+    parameters {
+        string(
+            name: 'EMAIL_RECIPIENTS',
+            defaultValue: 'eranp@radware.com',
+            description: 'Comma-separated list of recipients for device tag change notifications.'
+        )
+        string(
+            name: 'STATE_DIR',
+            defaultValue: 'device_tag_tracking_state',
+            description: 'Persistent workspace directory that stores the previous device tag snapshot.'
+        )
+        booleanParam(
+            name: 'SEND_EMAIL_ON_NO_CHANGE',
+            defaultValue: false,
+            description: 'Send an email even when no tag changes are detected.'
+        )
+        booleanParam(
+            name: 'FAIL_ON_CHANGE',
+            defaultValue: false,
+            description: 'Mark the Jenkins build as failed when tag changes are detected.'
+        )
+    }
+
+    environment {
+        PG_HOST = '10.185.20.124'
+        PG_PORT = '5432'
+        PG_DATABASE = 'results'
+        PG_USER = 'postgres'
+        DEVICE_TAG_OUTPUT_DIR = 'device_tag_tracking'
+    }
+
+    stages {
+        stage('Checkout') {
+            steps {
+                git branch: 'main',
+                    url: 'https://github.com/rdwr-eranp/defensepro-jira-monitor.git'
+            }
+        }
+
+        stage('Setup Python Environment') {
+            steps {
+                script {
+                    if (isUnix()) {
+                        sh '''
+                            if [ ! -d "venv" ]; then
+                                python3 -m venv venv
+                            fi
+                            . venv/bin/activate
+                            pip install --upgrade pip
+                            pip install -r requirements.txt
+                        '''
+                    } else {
+                        bat '''
+                            if not exist venv (
+                                python -m venv venv
+                            )
+                            call venv\Scripts\activate.bat
+                            python -m pip install --upgrade pip
+                            pip install -r requirements.txt
+                        '''
+                    }
+                }
+            }
+        }
+
+        stage('Track Device Tags') {
+            steps {
+                script {
+                    try {
+                        withCredentials([string(credentialsId: 'pg-password', variable: 'PG_PASSWORD')]) {
+                            if (isUnix()) {
+                                sh """
+                                    . venv/bin/activate
+                                    export PG_HOST='${env.PG_HOST}'
+                                    export PG_PORT='${env.PG_PORT}'
+                                    export PG_DATABASE='${env.PG_DATABASE}'
+                                    export PG_USER='${env.PG_USER}'
+                                    export DEVICE_TAG_OUTPUT_DIR='${env.DEVICE_TAG_OUTPUT_DIR}'
+                                    python3 device_tag_tracker.py --state-dir '${params.STATE_DIR}' --output-dir '${env.DEVICE_TAG_OUTPUT_DIR}'
+                                """
+                            } else {
+                                bat """
+                                    call venv\Scripts\activate.bat
+                                    set PG_HOST=${env.PG_HOST}
+                                    set PG_PORT=${env.PG_PORT}
+                                    set PG_DATABASE=${env.PG_DATABASE}
+                                    set PG_USER=${env.PG_USER}
+                                    set DEVICE_TAG_OUTPUT_DIR=${env.DEVICE_TAG_OUTPUT_DIR}
+                                    python device_tag_tracker.py --state-dir "${params.STATE_DIR}" --output-dir "${env.DEVICE_TAG_OUTPUT_DIR}"
+                                """
+                            }
+                        }
+                    } catch (Exception e) {
+                        echo "Jenkins PostgreSQL credential not found or tracker failed: ${e.message}"
+                        echo "Trying .env fallback for local/debug Jenkins runs."
+                        if (isUnix()) {
+                            sh """
+                                . venv/bin/activate
+                                if [ -f .env ]; then
+                                    set -a; . ./.env; set +a
+                                else
+                                    echo "ERROR: .env file not found and Jenkins credential path failed."
+                                    exit 1
+                                fi
+                                export DEVICE_TAG_OUTPUT_DIR='${env.DEVICE_TAG_OUTPUT_DIR}'
+                                python3 device_tag_tracker.py --state-dir '${params.STATE_DIR}' --output-dir '${env.DEVICE_TAG_OUTPUT_DIR}'
+                            """
+                        } else {
+                            bat """
+                                call venv\Scripts\activate.bat
+                                if exist .env (
+                                    for /f "usebackq tokens=* delims=" %%a in (".env") do set "%%a"
+                                ) else (
+                                    echo ERROR: .env file not found and Jenkins credential path failed.
+                                    exit /b 1
+                                )
+                                set DEVICE_TAG_OUTPUT_DIR=${env.DEVICE_TAG_OUTPUT_DIR}
+                                python device_tag_tracker.py --state-dir "${params.STATE_DIR}" --output-dir "${env.DEVICE_TAG_OUTPUT_DIR}"
+                            """
+                        }
+                    }
+
+                    def summary = new groovy.json.JsonSlurperClassic().parseText(readFile("${env.DEVICE_TAG_OUTPUT_DIR}/device_tag_summary.json"))
+                    env.DEVICE_TAG_CHANGE_COUNT = summary.changed_count.toString()
+                    env.DEVICE_TAG_TAG_CHANGE_COUNT = summary.tag_changed_count.toString()
+                    env.DEVICE_TAG_ADDED_COUNT = summary.added_device_count.toString()
+                    env.DEVICE_TAG_REMOVED_COUNT = summary.removed_device_count.toString()
+                    env.DEVICE_TAG_BASELINE_CREATED = summary.baseline_created.toString()
+                    currentBuild.description = "Device tag changes: ${env.DEVICE_TAG_CHANGE_COUNT}"
+                }
+            }
+        }
+
+        stage('Archive Reports') {
+            steps {
+                archiveArtifacts artifacts: 'device_tag_tracking/**/*, device_tag_tracking_state/*.csv',
+                                 allowEmptyArchive: false,
+                                 fingerprint: true,
+                                 onlyIfSuccessful: false
+            }
+        }
+
+        stage('Publish Report') {
+            steps {
+                publishHTML([
+                    allowMissing: false,
+                    alwaysLinkToLastBuild: true,
+                    keepAll: true,
+                    reportDir: 'device_tag_tracking',
+                    reportFiles: 'device_tag_report.html',
+                    reportName: 'Device Tag Change Report',
+                    reportTitles: 'DefensePro Device Tag Change Report'
+                ])
+            }
+        }
+
+        stage('Email Notification') {
+            when {
+                expression {
+                    return params.EMAIL_RECIPIENTS?.trim() && ((env.DEVICE_TAG_CHANGE_COUNT ?: '0') != '0' || params.SEND_EMAIL_ON_NO_CHANGE)
+                }
+            }
+            steps {
+                script {
+                    def htmlBody = readFile('device_tag_tracking/device_tag_report.html')
+                    def subjectPrefix = (env.DEVICE_TAG_CHANGE_COUNT != '0') ? 'Device tag changes detected' : 'Device tag check: no changes'
+                    mail(
+                        subject: "${subjectPrefix} (${env.DEVICE_TAG_CHANGE_COUNT} changes)",
+                        body: htmlBody,
+                        mimeType: 'text/html',
+                        to: params.EMAIL_RECIPIENTS
+                    )
+                }
+            }
+        }
+
+        stage('Enforce Change Policy') {
+            when {
+                expression { return params.FAIL_ON_CHANGE && (env.DEVICE_TAG_CHANGE_COUNT ?: '0') != '0' }
+            }
+            steps {
+                error("Device tag changes detected and FAIL_ON_CHANGE is enabled: ${env.DEVICE_TAG_CHANGE_COUNT} changes")
+            }
+        }
+    }
+
+    post {
+        success {
+            echo "Device tag tracking completed. Changes: ${env.DEVICE_TAG_CHANGE_COUNT ?: 'unknown'}"
+        }
+        failure {
+            script {
+                if (params.EMAIL_RECIPIENTS?.trim()) {
+                    mail(
+                        subject: "FAILED: Device Tag Tracking Job",
+                        body: """
+                        <h2>Device Tag Tracking Failed</h2>
+                        <p><strong>Build:</strong> #${BUILD_NUMBER}</p>
+                        <p>Check the console output: <a href="${BUILD_URL}console">${BUILD_URL}console</a></p>
+                        """,
+                        mimeType: 'text/html',
+                        to: params.EMAIL_RECIPIENTS
+                    )
+                }
+            }
+        }
+    }
+}
