@@ -195,7 +195,7 @@ pipeline {
 
         stage('Archive Reports') {
             steps {
-                archiveArtifacts artifacts: 'device_tag_tracking/**/*, device_tag_tracking_state/*.csv',
+                archiveArtifacts artifacts: 'device_tag_tracking/**/*, device_tag_tracking_state/*.csv, device_tag_tracking_state/*.html',
                                  allowEmptyArchive: false,
                                  fingerprint: true,
                                  onlyIfSuccessful: false

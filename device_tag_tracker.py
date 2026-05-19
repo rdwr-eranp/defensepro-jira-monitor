@@ -480,6 +480,7 @@ def main():
 
     latest_snapshot_path = state_dir / "latest_device_tags.csv"
     history_path = state_dir / "device_tag_change_history.csv"
+    persistent_history_html_path = state_dir / "device_tag_change_history.html"
     previous_devices = read_snapshot(latest_snapshot_path)
     current_devices = fetch_devices()
     comparison = compare_snapshots(previous_devices, current_devices)
@@ -502,6 +503,7 @@ def main():
     history_rows_added = append_change_history(history_path, comparison, generated_at)
     history_rows = read_change_history(history_path)
     write_history_html(history_html_path, history_rows, summary)
+    write_history_html(persistent_history_html_path, history_rows, summary)
 
     summary.update({
         "current_snapshot": str(current_snapshot_path),
@@ -510,6 +512,7 @@ def main():
         "markdown_report": str(markdown_path),
         "html_report": str(html_path),
         "history_html_report": str(history_html_path),
+        "persistent_history_html_report": str(persistent_history_html_path),
         "state_snapshot": str(latest_snapshot_path),
         "history_csv": str(history_path),
         "history_rows_added": history_rows_added,
@@ -521,6 +524,7 @@ def main():
 
     print(f"Generated {html_path}")
     print(f"Generated {history_html_path}")
+    print(f"Updated {persistent_history_html_path}")
     print(f"Generated {markdown_path}")
     print(f"Generated {changes_csv_path}")
     print(f"Total devices: {summary['total_devices']}")

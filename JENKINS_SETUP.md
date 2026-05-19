@@ -100,6 +100,7 @@ Use this job when you want to track changes to device labels stored in PostgreSQ
    - `device_tag_tracker.py` reads the current `public.device` map.
    - The job stores the previous snapshot in `device_tag_tracking_state/latest_device_tags.csv` inside the Jenkins workspace.
    - Every detected change is appended to `device_tag_tracking_state/device_tag_change_history.csv` with the run timestamp, Jenkins job name, build number, build URL, device ID/IP, old tag, and new tag.
+   - A single cumulative HTML trace is updated every run at `device_tag_tracking_state/device_tag_change_history.html`.
    - Each run compares the current snapshot to the previous one and archives `device_tag_tracking/device_tag_report.html`, `device_tag_tracking/device_tag_tracking_history.html`, `device_tag_tracking/device_tag_report.md`, `device_tag_tracking/device_tag_changes.csv`, and JSON/CSV snapshots.
    - The Jenkinsfile fingerprints archived artifacts and keeps the last 365 builds/artifact sets by default, so the Jenkins build history becomes the trace timeline.
    - If the Jenkins workspace is deleted, the next run creates a fresh baseline and reports changes from the following run onward.
