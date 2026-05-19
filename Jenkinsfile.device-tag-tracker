@@ -67,7 +67,7 @@ pipeline {
                             if not exist venv (
                                 python -m venv venv
                             )
-                            call venv\Scripts\activate.bat
+                            call venv\\Scripts\\activate.bat
                             python -m pip install --upgrade pip
                             pip install -r requirements.txt
                         '''
@@ -93,7 +93,7 @@ pipeline {
                                 """
                             } else {
                                 bat """
-                                    call venv\Scripts\activate.bat
+                                    call venv\\Scripts\\activate.bat
                                     set PG_HOST=${env.PG_HOST}
                                     set PG_PORT=${env.PG_PORT}
                                     set PG_DATABASE=${env.PG_DATABASE}
@@ -120,7 +120,7 @@ pipeline {
                             """
                         } else {
                             bat """
-                                call venv\Scripts\activate.bat
+                                call venv\\Scripts\\activate.bat
                                 if exist .env (
                                     for /f "usebackq tokens=* delims=" %%a in (".env") do set "%%a"
                                 ) else (
