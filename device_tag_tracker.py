@@ -228,6 +228,15 @@ def append_change_history(path, comparison, generated_at):
     return len(rows)
 
 
+def read_change_history(path):
+    if not path.exists():
+        return []
+
+    with path.open("r", encoding="utf-8", newline="") as file:
+        reader = csv.DictReader(file)
+        return [{key: clean_value(row.get(key, "")) for key in HISTORY_COLUMNS} for row in reader]
+
+
 def markdown_table(headers, rows):
     output = ["| " + " | ".join(headers) + " |", "| " + " | ".join(["---"] * len(headers)) + " |"]
     for row in rows:
@@ -375,6 +384,72 @@ def write_html(path, devices, comparison, summary):
     path.write_text(html, encoding="utf-8")
 
 
+def write_history_html(path, history_rows, summary):
+        change_counts = Counter(row["change_type"] for row in history_rows)
+        tag_change_count = change_counts.get("tag_changed", 0)
+        added_count = change_counts.get("device_added", 0)
+        removed_count = change_counts.get("device_removed", 0)
+        latest_rows = list(reversed(history_rows))[:200]
+
+        if history_rows:
+                history_table_rows = [
+                        [
+                                row["run_timestamp"],
+                                row["jenkins_build"],
+                                row["change_type"],
+                                row["id"],
+                                row["name"],
+                                row["ip"],
+                                row["platform"],
+                                row["old_tag"],
+                                row["new_tag"],
+                                row["remark"],
+                                row["jenkins_build_url"],
+                        ]
+                        for row in latest_rows
+                ]
+                history_section = html_table(
+                        ["Timestamp", "Build", "Change", "ID", "Name", "IP", "Platform", "Old Tag", "New Tag", "Remark", "Build URL"],
+                        history_table_rows,
+                )
+        else:
+                history_section = "<p>No tag changes have been recorded yet. The first successful run creates the baseline; history appears after a later run detects a change.</p>"
+
+        html = f"""<!doctype html>
+<html lang=\"en\">
+<head>
+    <meta charset=\"utf-8\">
+    <title>Device Tag Tracking History</title>
+    <style>
+        body {{ font-family: Arial, sans-serif; margin: 24px; color: #222; }}
+        h1, h2 {{ color: #1f4e79; }}
+        table {{ border-collapse: collapse; width: 100%; margin: 12px 0 24px; font-size: 13px; }}
+        th, td {{ border: 1px solid #ddd; padding: 6px 8px; text-align: left; vertical-align: top; }}
+        th {{ background: #f2f5f8; }}
+        .summary {{ display: flex; flex-wrap: wrap; gap: 12px; margin: 18px 0; }}
+        .card {{ border: 1px solid #ddd; border-radius: 6px; padding: 12px 16px; min-width: 150px; background: #fafafa; }}
+        .value {{ font-size: 24px; font-weight: bold; }}
+        .note {{ color: #555; }}
+    </style>
+</head>
+<body>
+    <h1>Device Tag Tracking History</h1>
+    <p>Generated at: {escape(summary['generated_at'])}</p>
+    <div class=\"summary\">
+        <div class=\"card\"><div>Total History Rows</div><div class=\"value\">{len(history_rows)}</div></div>
+        <div class=\"card\"><div>Tag Changes</div><div class=\"value\">{tag_change_count}</div></div>
+        <div class=\"card\"><div>Added Devices</div><div class=\"value\">{added_count}</div></div>
+        <div class=\"card\"><div>Removed Devices</div><div class=\"value\">{removed_count}</div></div>
+    </div>
+    <p class=\"note\">Showing the latest {len(latest_rows)} history rows. The complete trace is archived as <code>device_tag_change_history.csv</code>.</p>
+    <h2>Recent Tracking Events</h2>
+    {history_section}
+</body>
+</html>
+"""
+        path.write_text(html, encoding="utf-8")
+
+
 def write_summary_properties(path, summary):
     keys = [
         "changed_count",
@@ -415,6 +490,7 @@ def main():
     changes_csv_path = output_dir / "device_tag_changes.csv"
     markdown_path = output_dir / "device_tag_report.md"
     html_path = output_dir / "device_tag_report.html"
+    history_html_path = output_dir / "device_tag_tracking_history.html"
     summary_path = output_dir / "device_tag_summary.json"
     summary_properties_path = output_dir / "device_tag_summary.properties"
 
@@ -424,6 +500,8 @@ def main():
     write_markdown(markdown_path, current_devices, comparison, summary)
     write_html(html_path, current_devices, comparison, summary)
     history_rows_added = append_change_history(history_path, comparison, generated_at)
+    history_rows = read_change_history(history_path)
+    write_history_html(history_html_path, history_rows, summary)
 
     summary.update({
         "current_snapshot": str(current_snapshot_path),
@@ -431,6 +509,7 @@ def main():
         "changes_csv": str(changes_csv_path),
         "markdown_report": str(markdown_path),
         "html_report": str(html_path),
+        "history_html_report": str(history_html_path),
         "state_snapshot": str(latest_snapshot_path),
         "history_csv": str(history_path),
         "history_rows_added": history_rows_added,
@@ -441,6 +520,7 @@ def main():
     write_snapshot(latest_snapshot_path, current_devices)
 
     print(f"Generated {html_path}")
+    print(f"Generated {history_html_path}")
     print(f"Generated {markdown_path}")
     print(f"Generated {changes_csv_path}")
     print(f"Total devices: {summary['total_devices']}")

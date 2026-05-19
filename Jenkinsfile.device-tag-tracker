@@ -209,7 +209,7 @@ pipeline {
                     alwaysLinkToLastBuild: true,
                     keepAll: true,
                     reportDir: 'device_tag_tracking',
-                    reportFiles: 'device_tag_report.html',
+                    reportFiles: 'device_tag_report.html,device_tag_tracking_history.html',
                     reportName: 'Device Tag Change Report',
                     reportTitles: 'DefensePro Device Tag Change Report'
                 ])
