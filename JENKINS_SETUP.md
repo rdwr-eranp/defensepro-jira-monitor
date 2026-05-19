@@ -91,7 +91,8 @@ Use this job when you want to track changes to device labels stored in PostgreSQ
    - The dedicated Jenkinsfile runs every hour using `cron('H * * * *')`.
 
 4. **Credentials:**
-   - Requires Jenkins secret text credential `pg-password` for the PostgreSQL password.
+   - Preferred: Jenkins secret text credential `pg-password` for the PostgreSQL password.
+   - Also supported: Jenkins username/password credential `postgres-user` with username `postgres` and the PostgreSQL password.
    - The job uses these database defaults unless overridden in the environment: `PG_HOST=10.185.20.124`, `PG_PORT=5432`, `PG_DATABASE=results`, `PG_USER=postgres`.
 
 5. **How tracking works:**
