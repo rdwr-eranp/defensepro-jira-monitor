@@ -524,6 +524,72 @@ def get_builds_for_version(conn, version, sprint_start, sprint_end):
     return ','.join([str(b) for b in builds])
 
 
+def _parse_period_datetime(value, end_of_day=False):
+    """Parse report period strings from Jira/env into local naive datetimes."""
+    if not value:
+        return None
+    text = str(value).strip()
+    date_only = len(text) <= 10
+    if text.endswith('Z'):
+        text = text[:-1] + '+00:00'
+    if len(text) >= 5 and text[-5] in ('+', '-') and text[-3] != ':':
+        text = f'{text[:-2]}:{text[-2:]}'
+
+    try:
+        parsed = datetime.fromisoformat(text)
+    except ValueError:
+        try:
+            parsed = datetime.strptime(text[:19], '%Y-%m-%dT%H:%M:%S')
+        except ValueError:
+            parsed = datetime.strptime(text[:10], '%Y-%m-%d')
+            date_only = True
+
+    if parsed.tzinfo:
+        parsed = parsed.astimezone().replace(tzinfo=None)
+    if date_only and end_of_day:
+        parsed = parsed.replace(hour=23, minute=59, second=59, microsecond=999999)
+    return parsed
+
+
+def get_jenkins_builds_for_period(period_start, period_end, max_builds=200):
+    """Return Jenkins build numbers created within the CI/reporting period."""
+    jenkins_url = os.getenv('JENKINS_BUILD_URL', '').strip().rstrip('/')
+    jenkins_job = os.getenv('JENKINS_BUILD_JOB', '').strip()
+    jenkins_user = os.getenv('JENKINS_BUILD_USER', '').strip()
+    jenkins_token = os.getenv('JENKINS_BUILD_TOKEN', '').strip()
+
+    if not jenkins_url or not jenkins_job:
+        return None
+
+    start_dt = _parse_period_datetime(period_start)
+    end_dt = _parse_period_datetime(period_end, end_of_day=True)
+    if not start_dt or not end_dt:
+        return None
+
+    auth = (jenkins_user, jenkins_token) if jenkins_user and jenkins_token else None
+    try:
+        url = f"{jenkins_url}/job/{jenkins_job}/api/json"
+        params = {'tree': f'builds[number,timestamp,result,displayName]{{0,{max_builds}}}'}
+        resp = requests.get(url, params=params, auth=auth, timeout=15, verify=False)
+        if resp.status_code != 200:
+            print(f"   ⚠️ Failed to fetch Jenkins build list: HTTP {resp.status_code}")
+            return None
+        selected = []
+        for build in resp.json().get('builds', []):
+            timestamp = build.get('timestamp')
+            number = build.get('number')
+            if not timestamp or number is None:
+                continue
+            build_dt = datetime.fromtimestamp(timestamp / 1000)
+            if start_dt <= build_dt <= end_dt:
+                selected.append(str(number))
+        selected.sort(key=lambda value: int(value))
+        return ','.join(selected) if selected else None
+    except Exception as e:
+        print(f"   ⚠️ Failed to fetch Jenkins build list: {e}")
+        return None
+
+
 def get_sprint_list(jira, n_closed=4):
     """
     Return the last n_closed closed sprints for the DP board plus the current
@@ -935,7 +1001,7 @@ def get_build_changelogs(builds_str):
                     raw_change_count += 1
                     msg = item.get('msg', '').split('\n')[0]
                     author = item.get('author', {}).get('fullName', 'Unknown')
-                    is_ci_trigger = author == 'CI User' and msg.startswith('Jenkins Job:')
+                    is_ci_trigger = msg.startswith('Jenkins Job:')
                     if is_ci_trigger:
                         skipped_change_count += 1
                         continue
@@ -977,7 +1043,7 @@ def generate_build_changelog_html(build_changelogs):
     <div style="background: #f3e5f5; border-left: 5px solid #7b1fa2; padding: 20px; margin: 20px 0; border-radius: 5px;">
         <h3 style="margin-top: 0; color: #7b1fa2;">🔧 Build Changes in CI Cycle</h3>
         <p style="font-size: 13px; color: #555;">'''
-    html += f'{total_changes} product change(s) across {len(build_changelogs)} build(s)'
+    html += f'{total_changes} product change(s) across {len(build_changelogs)} Jenkins build(s) created during the CI cycle'
     if skipped_changes:
         html += f' | {skipped_changes} CI trigger change(s) hidden'
     if unavailable_count:
@@ -1015,6 +1081,176 @@ def generate_build_changelog_html(build_changelogs):
         html += '</details>'
     html += '</div>'
     return html
+
+
+def _collect_product_changes(build_changelogs, limit=35):
+    """Flatten product changelog entries for AI analysis, keeping prompt size bounded."""
+    changes = []
+    for build in build_changelogs or []:
+        for change in build.get('changes', []):
+            msg = str(change.get('msg') or '').strip()
+            if not msg:
+                continue
+            changes.append({
+                'build': build.get('build'),
+                'result': build.get('result', 'N/A'),
+                'commitId': change.get('commitId', ''),
+                'author': change.get('author', 'Unknown'),
+                'msg': msg,
+            })
+    return changes[:limit], max(len(changes) - limit, 0), len(changes)
+
+
+def _change_keyword_summary(changes):
+    """Create a lightweight domain summary from commit messages before calling AI."""
+    areas = {
+        'CloudAssist / Cloud WebDDoS': ['cloudassist', 'cloud webddos', 'webddos', 'secure path', 'attack sampling', 'peacetime', 'keepalive'],
+        'Network / TCP Connectivity': ['network', 'tcpconnection', 'tcp communication', 'connection interface', 'observer'],
+        'AX / Configuration / CDB': [' ax ', '|ax|', 'configuration', 'cdb', 'policy', 'command'],
+        'L7 AppSig / Signatures': ['l7appsig', 'appsig', 'signature'],
+        'ND / MLX / Platform Bring-up': ['mlx', 'toolchain', 'nd bl', 'module'],
+        'Build / Packaging': ['makefile', 'build', 'compile', 'skeleton'],
+    }
+    counts = Counter()
+    examples = defaultdict(list)
+    for change in changes:
+        lowered = f" {change['msg'].lower()} "
+        matched = False
+        for area, keywords in areas.items():
+            if any(keyword in lowered for keyword in keywords):
+                counts[area] += 1
+                if len(examples[area]) < 3:
+                    examples[area].append(change['msg'][:100])
+                matched = True
+        if not matched:
+            counts['Other / Needs triage'] += 1
+            if len(examples['Other / Needs triage']) < 3:
+                examples['Other / Needs triage'].append(change['msg'][:100])
+    return counts, examples
+
+
+def generate_change_test_area_recommendations(build_changelogs, version, automation_data=None, xray_summary=None):
+    """Use AI to recommend test areas from Jenkins product changes."""
+    changes, truncated_count, total_changes = _collect_product_changes(build_changelogs)
+    if not changes:
+        return None
+
+    github_token = os.getenv('GITHUB_TOKEN')
+    if not github_token:
+        print("   ⓘ GitHub token not found, skipping AI change-based test recommendations")
+        return None
+
+    from openai import OpenAI
+
+    keyword_counts, keyword_examples = _change_keyword_summary(changes)
+    jenkins_job = os.getenv('JENKINS_BUILD_JOB', '').strip() or f'DP_{version}'
+    build_summary = []
+    for build in build_changelogs or []:
+        build_summary.append(
+            f"- Build {build.get('build')}: {build.get('result', 'N/A')}, "
+            f"{len(build.get('changes', []))} product changes, "
+            f"{build.get('skipped_change_count', 0)} Jenkins trigger entries hidden"
+        )
+
+    context = f"""
+DefensePro release: {version}
+Jenkins job: {jenkins_job}
+
+BUILD SUMMARY:
+{chr(10).join(build_summary)}
+
+CURRENT TEST CONTEXT:
+- Automation coverage: {(automation_data or {}).get('overall_coverage', 0):.1f}%
+- Pass ratio: {(automation_data or {}).get('pass_ratio', 0):.1f}%
+- Failed regression executions: {(automation_data or {}).get('failed', 0)}
+- Xray execution coverage: {(xray_summary or {}).get('testing_coverage', 0):.1f}%
+- Xray pass ratio: {(xray_summary or {}).get('pass_ratio', 0):.1f}%
+
+KEYWORD AREA SIGNALS FROM PRODUCT CHANGES:
+"""
+    for area, count in keyword_counts.most_common():
+        context += f"- {area}: {count} matching change(s)"
+        examples = keyword_examples.get(area, [])
+        if examples:
+            context += f"; examples: {' | '.join(examples)}"
+        context += "\n"
+
+    context += f"\nREPRESENTATIVE PRODUCT CHANGE MESSAGES ANALYZED: {len(changes)} of {total_changes}"
+    if truncated_count:
+        context += f" ({truncated_count} additional changes omitted to keep the prompt bounded)"
+    context += "\n"
+    for change in changes:
+        context += f"- Build {change['build']} {change['commitId']}: {change['msg'][:140]}\n"
+
+    instructions = """
+Recommend test areas for QA based only on the product changes above.
+Return valid HTML only, no markdown and no code fences.
+Use exactly these sections:
+<h4>Recommended Test Focus</h4>
+<ol> with 5-8 prioritized test areas. Each item must include: area name, why the change list points there, and specific scenarios to execute.
+<h4>Regression Sweep</h4>
+<ul> with cross-cutting regression areas, including platform/mode considerations when relevant.
+<h4>Risk Notes</h4>
+<ul> with concise risks or assumptions, especially if a failed/aborted Jenkins build accumulated changes.
+Be specific to DefensePro and avoid generic advice.
+"""
+
+    try:
+        client = OpenAI(
+            base_url="https://models.inference.ai.azure.com",
+            api_key=github_token,
+            timeout=60,
+        )
+        messages = [
+            {
+                "role": "system",
+                "content": (
+                    "You are a senior DefensePro QA architect. Map code-change signals to focused test areas. "
+                    "Prefer concrete feature/regression scenarios over broad process advice. Output valid HTML only."
+                )
+            },
+            {"role": "user", "content": context + "\n" + instructions}
+        ]
+        last_error = None
+        for model in _github_model_candidates('CHANGE_TEST_AREA_AI_MODEL', ['o3', 'gpt-4.1', 'gpt-4o']):
+            try:
+                print(f"   🤖 Generating AI test-area recommendations from Jenkins changes using {model}...")
+                response = client.chat.completions.create(
+                    model=model,
+                    messages=messages,
+                    **_completion_token_args(model, 1800)
+                )
+                recommendations = response.choices[0].message.content.strip()
+                if not recommendations:
+                    last_error = "model returned empty response"
+                    print(f"   ⚠️ AI test-area recommendations: {model} returned empty response")
+                    continue
+                print(f"   ✓ AI test-area recommendations generated successfully with {model}\n")
+                return recommendations
+            except Exception as e:
+                last_error = e
+                print(f"   ⚠️ AI test-area recommendations failed with {model}: {e}")
+                continue
+
+        print(f"   ⚠️ AI test-area recommendations failed for all configured models: {last_error}")
+        print("   Continuing without change-based AI recommendations...\n")
+        return None
+    except Exception as e:
+        print(f"   ⚠️ AI test-area recommendations failed: {e}")
+        print("   Continuing without change-based AI recommendations...\n")
+        return None
+
+
+def generate_change_test_area_html(test_area_recommendations):
+    """Generate HTML wrapper for AI test-area recommendations."""
+    if not test_area_recommendations:
+        return ""
+    return f'''
+    <div style="background: linear-gradient(135deg, #f1f8e9 0%, #e8f5e9 100%); border-left: 5px solid #2e7d32; padding: 25px; margin: 20px 0; border-radius: 5px; box-shadow: 0 2px 8px rgba(46, 125, 50, 0.12);">
+        <h3 style="margin-top: 0; color: #1b5e20;">🤖 AI Recommended Test Areas from Code Changes <span style="font-size: 12px; background: #2e7d32; color: white; padding: 3px 8px; border-radius: 10px; margin-left: 8px;">STRONGEST AVAILABLE</span></h3>
+        <div style="line-height: 1.8; color: #263238;">{test_area_recommendations}</div>
+    </div>
+    '''
 
 
 def get_automation_data(conn, jira, version, builds, sprint_start, sprint_end):
@@ -1767,6 +2003,21 @@ def generate_insights(platform_type_data, stats, sprint_name):
     return insights
 
 
+def _github_model_candidates(env_var, defaults):
+    """Return ordered GitHub Models candidates, allowing comma-separated env override."""
+    configured = os.getenv(env_var, '').strip()
+    if configured:
+        return [model.strip() for model in configured.split(',') if model.strip()]
+    return defaults
+
+
+def _completion_token_args(model, tokens):
+    """OpenAI reasoning models use max_completion_tokens; chat models use max_tokens."""
+    if model.lower().startswith('o'):
+        return {'max_completion_tokens': tokens}
+    return {'max_tokens': tokens}
+
+
 def generate_ai_insights(stats, bug_data, platform_data, critical_failures, sprint_name,
                           historical_trends=None, sub_exec_stats=None, xray_summary=None,
                           ci_sprint_history=None, sub_exec_sprint_history=None):
@@ -1918,33 +2169,44 @@ Provide exactly 5 insight sections as HTML:
 Use <ul>/<ol> and <strong> for emphasis. Be concise, technical, and data-driven. Limit total response to ~1100 tokens.
 """
 
-        print("   🤖 Generating AI trend insights using GitHub Models...")
+        messages = [
+            {
+                "role": "system",
+                "content": (
+                    "You are a senior QA automation expert analyzing DefensePro release test reports. "
+                    "Focus on sprint-over-sprint trend direction, risk signals, and actionable recommendations. "
+                    "Output valid HTML only — no markdown, no code fences."
+                )
+            },
+            {
+                "role": "user",
+                "content": context
+            }
+        ]
+        last_error = None
+        for model in _github_model_candidates('REPORT_AI_MODEL', ['o3', 'gpt-4.1', 'gpt-4o']):
+            try:
+                print(f"   🤖 Generating AI trend insights using GitHub Models ({model})...")
+                response = client.chat.completions.create(
+                    model=model,
+                    messages=messages,
+                    **_completion_token_args(model, 8000)
+                )
+                ai_insights = response.choices[0].message.content.strip()
+                if not ai_insights:
+                    last_error = "model returned empty response"
+                    print(f"   ⚠️ AI insights: {model} returned empty response")
+                    continue
+                print(f"   ✓ AI trend insights generated successfully with {model}\n")
+                return ai_insights
+            except Exception as e:
+                last_error = e
+                print(f"   ⚠️ AI trend insights failed with {model}: {e}")
+                continue
 
-        response = client.chat.completions.create(
-            model="o3-mini",
-            messages=[
-                {
-                    "role": "system",
-                    "content": (
-                        "You are a senior QA automation expert analyzing DefensePro release test reports. "
-                        "Focus on sprint-over-sprint trend direction, risk signals, and actionable recommendations. "
-                        "Output valid HTML only — no markdown, no code fences."
-                    )
-                },
-                {
-                    "role": "user",
-                    "content": context
-                }
-            ],
-            max_completion_tokens=8000
-        )
-
-        ai_insights = response.choices[0].message.content.strip()
-        if not ai_insights:
-            print("   ⚠️ AI insights: model returned empty response (token budget exhausted?)")
-            return None
-        print("   ✓ AI trend insights generated successfully\n")
-        return ai_insights
+        print(f"   ⚠️ AI insights generation failed for all configured models: {last_error}")
+        print("   Continuing with rule-based insights only...\n")
+        return None
 
     except Exception as e:
         print(f"   ⚠️ AI insights generation failed: {e}")
@@ -2122,9 +2384,18 @@ def main():
 
     # Fetch build changelogs from Jenkins (if configured)
     build_changelogs = None
-    if builds:
+    changelog_builds = builds if builds_override else None
+    if not changelog_builds:
+        print("Auto-detecting Jenkins builds for CI changelog...")
+        changelog_builds = get_jenkins_builds_for_period(ci_start, sprint_end)
+        if changelog_builds:
+            print(f"✓ Jenkins builds in CI period: {changelog_builds}")
+        elif builds:
+            changelog_builds = builds
+            print("⚠️  Could not auto-detect Jenkins builds for CI period; using DB regression builds for changelog")
+    if changelog_builds:
         print("Fetching build changelogs from Jenkins...")
-        build_changelogs = get_build_changelogs(builds)
+        build_changelogs = get_build_changelogs(changelog_builds)
         if build_changelogs:
             total_changes = sum(len(b['changes']) for b in build_changelogs)
             print(f"✓ Found {total_changes} change(s) across {len(build_changelogs)} builds\n")
@@ -2671,6 +2942,15 @@ def main():
             sub_exec_sprint_history=sub_exec_history,
         )
 
+    test_area_recommendations = None
+    if build_changelogs and not skip_ai_insights:
+        test_area_recommendations = generate_change_test_area_recommendations(
+            build_changelogs,
+            version,
+            automation_data=automation_data,
+            xray_summary=sub_exec_xray_data.get('summary'),
+        )
+
     
     # Build platform type stats HTML - always show table even with no data
     platform_html = ""
@@ -2761,6 +3041,7 @@ def main():
 
     # Build changelog HTML
     build_changelog_html = generate_build_changelog_html(build_changelogs)
+    change_test_area_html = generate_change_test_area_html(test_area_recommendations)
     
     html_content = f"""<!DOCTYPE html>
 <html>
@@ -2840,11 +3121,13 @@ def main():
         
         {build_changelog_html}
         
+        {change_test_area_html}
+        
         {automation_chart_html}
         
         {('<div style="background: #fff3cd; border-left: 5px solid #ffc107; padding: 20px; margin: 20px 0; border-radius: 5px;"><h3 style="margin-top: 0; color: #856404;">📊 Rule-Based Insights <span style="font-size: 12px; background: #ffc107; color: #333; padding: 3px 8px; border-radius: 10px; margin-left: 8px;">DETERMINISTIC</span></h3><ul style="line-height: 1.8;">' + ''.join([f"<li>{insight}</li>" for insight in insights]) + '</ul></div>') if insights else ''}
         
-        {('<div style="background: linear-gradient(135deg, #e0f7fa 0%, #e1f5fe 100%); border-left: 5px solid #0288d1; padding: 25px; margin: 20px 0; border-radius: 5px; box-shadow: 0 2px 8px rgba(2, 136, 209, 0.1);"><h3 style="margin-top: 0; color: #01579b;">🤖 AI-Generated Insights <span style="font-size: 12px; background: #0288d1; color: white; padding: 3px 8px; border-radius: 10px; margin-left: 8px;">O3-MINI</span></h3><div style="line-height: 1.8; color: #263238;">' + ai_insights + '</div></div>') if ai_insights else ''}
+        {('<div style="background: linear-gradient(135deg, #e0f7fa 0%, #e1f5fe 100%); border-left: 5px solid #0288d1; padding: 25px; margin: 20px 0; border-radius: 5px; box-shadow: 0 2px 8px rgba(2, 136, 209, 0.1);"><h3 style="margin-top: 0; color: #01579b;">🤖 AI-Generated Insights <span style="font-size: 12px; background: #0288d1; color: white; padding: 3px 8px; border-radius: 10px; margin-left: 8px;">STRONGEST AVAILABLE</span></h3><div style="line-height: 1.8; color: #263238;">' + ai_insights + '</div></div>') if ai_insights else ''}
         
         {platform_html}
         
@@ -3007,6 +3290,7 @@ def main():
                 'build_changelogs': build_changelogs,
                 'insights': insights,
                 'ai_insights': ai_insights,
+                'test_area_recommendations': test_area_recommendations,
                 'platform_type_data': automation_data.get('platform_type_data'),
                 # Chart images as PNG bytes
                 'chart_automation': fig_to_png(fig_automation),

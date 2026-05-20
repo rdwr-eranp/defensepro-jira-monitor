@@ -291,7 +291,7 @@ def _slide_changelog(prs, build_changelogs):
 
     slide = prs.slides.add_slide(prs.slide_layouts[6])
     total_changes = sum(len(b['changes']) for b in build_changelogs)
-    _title_bar(slide, f"Build Changes — {total_changes} product commits across {len(build_changelogs)} builds")
+    _title_bar(slide, f"Jenkins Build Changes — {total_changes} product commits across {len(build_changelogs)} CI-cycle builds")
 
     txBox = slide.shapes.add_textbox(Inches(0.4), Inches(1.2), Inches(9.2), Inches(6))
     tf = txBox.text_frame
@@ -377,6 +377,41 @@ def _slide_insights(prs, insights, ai_insights):
                 p.text = line[:120]
                 p.font.size = Pt(10)
                 p.font.color.rgb = GRAY
+
+
+def _slide_test_area_recommendations(prs, recommendations_html):
+    """AI test-area recommendations slide."""
+    if not recommendations_html:
+        return
+
+    import re
+    clean = recommendations_html
+    clean = re.sub(r'</h4>\s*', '\n', clean)
+    clean = re.sub(r'<h4[^>]*>', '', clean)
+    clean = re.sub(r'</li>\s*', '\n', clean)
+    clean = re.sub(r'<li[^>]*>', '- ', clean)
+    clean = re.sub(r'</?(ol|ul)[^>]*>', '', clean)
+    clean = re.sub(r'<[^>]+>', '', clean)
+    lines = [line.strip() for line in clean.split('\n') if line.strip()]
+    if not lines:
+        return
+
+    slide = prs.slides.add_slide(prs.slide_layouts[6])
+    _title_bar(slide, "AI Recommended Test Areas")
+
+    txBox = slide.shapes.add_textbox(Inches(0.4), Inches(1.2), Inches(9.2), Inches(6))
+    tf = txBox.text_frame
+    tf.word_wrap = True
+
+    first = True
+    for line in lines[:18]:
+        p = tf.paragraphs[0] if first else tf.add_paragraph()
+        first = False
+        p.text = line[:135]
+        p.font.size = Pt(10 if line.startswith('- ') else 12)
+        p.font.bold = not line.startswith('- ')
+        p.font.color.rgb = DARK if not line.startswith('- ') else GRAY
+        p.space_after = Pt(4)
 
 
 def _slide_platform_table(prs, platform_type_data):
@@ -491,7 +526,10 @@ def generate_ppt(report_data, output_path):
     # 13. Build Changelog
     _slide_changelog(prs, report_data.get('build_changelogs'))
 
-    # 14. Insights
+    # 14. Change-based test area recommendations
+    _slide_test_area_recommendations(prs, report_data.get('test_area_recommendations'))
+
+    # 15. Insights
     _slide_insights(prs, report_data.get('insights'), report_data.get('ai_insights'))
 
     prs.save(output_path)
