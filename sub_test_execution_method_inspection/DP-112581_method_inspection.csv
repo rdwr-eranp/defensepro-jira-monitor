@@ -1,0 +1,15 @@
+﻿sub_test_execution_key,sub_test_execution_summary,sub_test_execution_status,test_key,test_summary,test_status,method,test_run_status
+DP-112581,AS suspend entry aging - Advanced Scenarios Testing,Accepted,DP-112456,AS Suspend Entry Aging | Additional Scenarios | Multiple Profiles with multiple Plicies,None,Automated,PASSED
+DP-112581,AS suspend entry aging - Advanced Scenarios Testing,Accepted,DP-112457,AS Suspend Entry Aging | Additional Scenarios | Single Profile with multiple Policies,None,Automated,PASSED
+DP-112581,AS suspend entry aging - Advanced Scenarios Testing,Accepted,DP-112458,AS Suspend Entry Aging | Additional Scenarios | less aging with max Tracking time,None,Automated,PASSED
+DP-112581,AS suspend entry aging - Advanced Scenarios Testing,Accepted,DP-112459,AS Suspend Entry Aging | Additional Scenarios | RO to B&R and Vice versa,None,Automated,PASSED
+DP-112581,AS suspend entry aging - Advanced Scenarios Testing,Accepted,DP-112460,AS Suspend Entry Aging | Additional Scenarios | Changing sensitivity levels,None,Automated,PASSED
+DP-112581,AS suspend entry aging - Advanced Scenarios Testing,Accepted,DP-112461,AS Suspend Entry Aging | Additional Scenarios | Changing suspend Table aging's,None,Automated,PASSED
+DP-112581,AS suspend entry aging - Advanced Scenarios Testing,Accepted,DP-112462,AS Suspend Entry Aging | Additional Scenarios | Adding and removing profile from Policy,None,Automated,PASSED
+DP-112581,AS suspend entry aging - Advanced Scenarios Testing,Accepted,DP-112463,AS Suspend Entry Aging | Additional Scenarios | Enabling and Disabling AS,None,Automated,PASSED
+DP-112581,AS suspend entry aging - Advanced Scenarios Testing,Accepted,DP-112464,AS Suspend Entry Aging | Additional Scenarios | Policy and Config import and Export,None,Automated,PASSED
+DP-112581,AS suspend entry aging - Advanced Scenarios Testing,Accepted,DP-112465,AS Suspend Entry Aging | Additional Scenarios | Reboot,None,Automated,PASSED
+DP-112581,AS suspend entry aging - Advanced Scenarios Testing,Accepted,DP-112466,AS Suspend Entry Aging | Additional Scenarios | Max Config,None,Automated,PASSED
+DP-112581,AS suspend entry aging - Advanced Scenarios Testing,Accepted,DP-112467,AS Suspend Entry Aging | Additional Scenarios | Cross Functionality,None,Automated,PASSED
+DP-112581,AS suspend entry aging - Advanced Scenarios Testing,Accepted,DP-112468,AS Suspend Entry Aging | Additional Scenarios | Backward Comaptability,None,Manual,PASSED
+DP-112581,AS suspend entry aging - Advanced Scenarios Testing,Accepted,DP-112469,AS Suspend Entry Aging | Additional Scenarios | Stress and Long run,None,Manual,PASSED

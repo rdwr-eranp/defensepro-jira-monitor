@@ -289,17 +289,32 @@ def get_sub_test_execution_xray_data(jira, sub_execs, version):
     # Get Rally Test Method from Jira for all unique tests
     print(f"   Getting Rally Test Method from Jira for {len(all_test_keys)} unique tests...")
     test_methods = {}
-    
-    for test_key in list(all_test_keys)[:200]:  # Limit to avoid too many API calls
+
+    sorted_test_keys = sorted(all_test_keys)
+    for start in range(0, len(sorted_test_keys), 100):
+        chunk = sorted_test_keys[start:start + 100]
         try:
-            issue = jira.issue(test_key, fields='customfield_10154')
-            method = getattr(issue.fields, 'customfield_10154', None)
-            if method and hasattr(method, 'value'):
-                test_methods[test_key] = method.value
-            else:
+            issues = jira.search_issues(
+                f"key in ({', '.join(chunk)})",
+                maxResults=False,
+                fields='customfield_10154'
+            )
+            returned_keys = set()
+            for issue in issues:
+                returned_keys.add(issue.key)
+                method = getattr(issue.fields, 'customfield_10154', None)
+                test_methods[issue.key] = method.value if method and hasattr(method, 'value') else 'NA'
+            for test_key in set(chunk) - returned_keys:
                 test_methods[test_key] = 'NA'
         except Exception:
-            test_methods[test_key] = 'NA'
+            for test_key in chunk:
+                try:
+                    issue = jira.issue(test_key, fields='customfield_10154')
+                    method = getattr(issue.fields, 'customfield_10154', None)
+                    test_methods[test_key] = method.value if method and hasattr(method, 'value') else 'NA'
+                except Exception:
+                    test_methods[test_key] = 'NA'
+        time.sleep(0.2)
     
     # Update executions with methods
     all_methods = Counter()
