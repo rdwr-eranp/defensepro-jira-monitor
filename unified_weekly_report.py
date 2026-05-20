@@ -20,7 +20,7 @@ from datetime import datetime, timedelta
 from collections import defaultdict, Counter
 import psycopg2
 import html
-import csv
+from html import escape as escape_html
 import requests
 import urllib3
 from ppt_report import generate_ppt
@@ -407,88 +407,6 @@ def get_version_info(jira, version_name):
     except Exception as e:
         print(f"⚠️  Could not fetch version info: {e}\n")
         return {'name': version_name, 'released': False, 'archived': False, 'is_active': True}
-
-def get_test_method_distribution(jira, version):
-    """
-    Get test method distribution for Tests related to sub test executions.
-    Reads from pre-generated CSV file if available, otherwise queries Jira directly.
-    
-    Tests have a Method field (customfield_10154) with values:
-    - Automated
-    - Manual  
-    - Automation Candidate
-    - Not Specified (null/empty)
-    """
-    csv_file = f"test_method_distribution_sub_exec_topics_{version.replace('.', '_')}.csv"
-    
-    # Try to read from pre-generated CSV first
-    if os.path.exists(csv_file):
-        print(f"   Loading test method data from {csv_file}...")
-        tests_data = []
-        try:
-            with open(csv_file, 'r', encoding='utf-8') as f:
-                reader = csv.DictReader(f)
-                tests_data = list(reader)
-            
-            # Count by method
-            method_counts = Counter()
-            executed_by_method = Counter()
-            not_executed_by_method = Counter()
-            
-            for test in tests_data:
-                method = test.get('Method', 'Not Specified') or 'Not Specified'
-                status = test.get('Status', 'Unknown')
-                ref_count = int(test.get('Referenced By Executions', 0) or 0)
-                
-                method_counts[method] += 1
-                if ref_count > 0:
-                    executed_by_method[method] += 1
-                else:
-                    not_executed_by_method[method] += 1
-            
-            return {
-                'total_tests': len(tests_data),
-                'by_method': dict(method_counts),
-                'executed_by_method': dict(executed_by_method),
-                'not_executed_by_method': dict(not_executed_by_method),
-                'source': 'csv'
-            }
-        except Exception as e:
-            print(f"   ⚠️ Error reading CSV: {e}")
-    
-    # Fallback: query Tests directly from Jira
-    print(f"   Querying Tests from Jira...")
-    try:
-        # Get Tests that have been associated with this version's test executions
-        # Note: Tests don't have fixVersion, so we query all Tests and count by method
-        tests = jira.search_issues(
-            'project = DP AND type = Test AND status != Trash',
-            maxResults=500,
-            fields='summary,status,customfield_10154'
-        )
-        
-        method_counts = Counter()
-        for test in tests:
-            method = getattr(test.fields, 'customfield_10154', None)
-            method_val = method.value if method and hasattr(method, 'value') else 'Not Specified'
-            method_counts[method_val] += 1
-        
-        return {
-            'total_tests': len(tests),
-            'by_method': dict(method_counts),
-            'executed_by_method': {},  # Not available from direct query
-            'not_executed_by_method': {},
-            'source': 'jira'
-        }
-    except Exception as e:
-        print(f"   ⚠️ Error querying Jira: {e}")
-        return {
-            'total_tests': 0,
-            'by_method': {},
-            'executed_by_method': {},
-            'not_executed_by_method': {},
-            'source': 'error'
-        }
 
 def connect_to_jira():
     """Connect to Jira using credentials from .env file"""
@@ -983,14 +901,29 @@ def get_build_changelogs(builds_str):
 
     results = []
     for build_num in build_numbers:
+        build_info = {
+            'build': build_num,
+            'displayName': f'#{build_num}',
+            'result': 'N/A',
+            'timestamp': None,
+            'changes': [],
+            'raw_change_count': 0,
+            'skipped_change_count': 0,
+            'available': False,
+            'http_status': None,
+        }
         try:
             url = f"{jenkins_url}/job/{jenkins_job}/{build_num}/api/json"
             params = {'tree': 'changeSets[items[msg,author[fullName],commitId]],changeSet[items[msg,author[fullName],commitId]],timestamp,result,displayName'}
             resp = requests.get(url, params=params, auth=auth, timeout=15, verify=False)
+            build_info['http_status'] = resp.status_code
             if resp.status_code != 200:
+                results.append(build_info)
                 continue
             data = resp.json()
             changes = []
+            raw_change_count = 0
+            skipped_change_count = 0
             # Pipeline jobs use changeSets (plural), freestyle uses changeSet (singular)
             change_sets = data.get('changeSets', [])
             if not change_sets:
@@ -999,21 +932,31 @@ def get_build_changelogs(builds_str):
                     change_sets = [cs]
             for cs in change_sets:
                 for item in cs.get('items', []):
+                    raw_change_count += 1
+                    msg = item.get('msg', '').split('\n')[0]
+                    author = item.get('author', {}).get('fullName', 'Unknown')
+                    is_ci_trigger = author == 'CI User' and msg.startswith('Jenkins Job:')
+                    if is_ci_trigger:
+                        skipped_change_count += 1
+                        continue
                     changes.append({
-                        'msg': item.get('msg', '').split('\n')[0][:120],
-                        'author': item.get('author', {}).get('fullName', 'Unknown'),
+                        'msg': msg[:120],
+                        'author': author,
                         'commitId': item.get('commitId', '')[:8],
                     })
-            build_info = {
-                'build': build_num,
+            build_info.update({
                 'displayName': data.get('displayName', f'#{build_num}'),
                 'result': data.get('result', 'N/A'),
                 'timestamp': data.get('timestamp'),
                 'changes': changes,
-            }
+                'raw_change_count': raw_change_count,
+                'skipped_change_count': skipped_change_count,
+                'available': True,
+            })
             results.append(build_info)
         except Exception as e:
             print(f"   ⚠️ Failed to fetch changelog for build {build_num}: {e}")
+            results.append(build_info)
             continue
 
     return results if results else None
@@ -1025,14 +968,21 @@ def generate_build_changelog_html(build_changelogs):
         return ""
 
     total_changes = sum(len(b['changes']) for b in build_changelogs)
-    if total_changes == 0:
+    unavailable_count = sum(1 for b in build_changelogs if not b.get('available', True))
+    skipped_changes = sum(b.get('skipped_change_count', 0) for b in build_changelogs)
+    if total_changes == 0 and unavailable_count == 0 and skipped_changes == 0:
         return ""
 
     html = '''
     <div style="background: #f3e5f5; border-left: 5px solid #7b1fa2; padding: 20px; margin: 20px 0; border-radius: 5px;">
         <h3 style="margin-top: 0; color: #7b1fa2;">🔧 Build Changes in CI Cycle</h3>
         <p style="font-size: 13px; color: #555;">'''
-    html += f'{total_changes} change(s) across {len(build_changelogs)} build(s)</p>'
+    html += f'{total_changes} product change(s) across {len(build_changelogs)} build(s)'
+    if skipped_changes:
+        html += f' | {skipped_changes} CI trigger change(s) hidden'
+    if unavailable_count:
+        html += f' | {unavailable_count} build(s) unavailable in Jenkins'
+    html += '</p>'
 
     for build in build_changelogs:
         ts = ''
@@ -1044,15 +994,24 @@ def generate_build_changelog_html(build_changelogs):
         if ts:
             html += f' - {ts}'
         html += f' — {len(build["changes"])} change(s)</summary>'
+        if not build.get('available', True):
+            status = build.get('http_status') or 'unknown'
+            html += f'<p style="font-size: 13px; color: #888; margin: 5px 0 5px 20px;">Jenkins build is unavailable (HTTP {status}).</p>'
+            html += '</details>'
+            continue
         if build['changes']:
             html += '<ul style="margin: 5px 0; font-size: 13px;">'
             for c in build['changes']:
-                commit_msg = c["msg"].replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
-                author_name = c["author"].replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+                commit_msg = escape_html(c["msg"])
+                author_name = escape_html(c["author"])
                 html += f'<li><code>{c["commitId"]}</code> {commit_msg} <em>({author_name})</em></li>'
             html += '</ul>'
         else:
-            html += '<p style="font-size: 13px; color: #888; margin: 5px 0 5px 20px;">No changes recorded</p>'
+            skipped = build.get('skipped_change_count', 0)
+            if skipped:
+                html += f'<p style="font-size: 13px; color: #888; margin: 5px 0 5px 20px;">No product changes recorded ({skipped} CI trigger change(s) hidden).</p>'
+            else:
+                html += '<p style="font-size: 13px; color: #888; margin: 5px 0 5px 20px;">No product changes recorded.</p>'
         html += '</details>'
     html += '</div>'
     return html
@@ -2279,11 +2238,6 @@ def main():
             }
         }
     
-    # Get test method distribution
-    print("Fetching test method distribution...")
-    test_method_data = get_test_method_distribution(jira, version)
-    print(f"✓ Found {test_method_data['total_tests']} tests with method data\n")
-    
     # Helper to check if status indicates completion (Done, Accepted, or Complete)
     def is_completed_status(status_name):
         status_lower = status_name.lower()
@@ -2484,29 +2438,6 @@ def main():
                 margin=dict(t=80, b=40, l=40, r=40)
             )
             xray_method_chart_html = fig_xray_method.to_html(include_plotlyjs=False, div_id='xray-method-chart', full_html=False)
-    
-    # Create test method distribution chart
-    fig_test_method = go.Figure()
-    test_method_chart_html = ""
-    if test_method_data['total_tests'] > 0:
-        methods = ['Automated', 'Manual', 'Automation Candidate', 'Not Specified']
-        method_values = [test_method_data['by_method'].get(m, 0) for m in methods]
-        method_colors = ['#4caf50', '#2196f3', '#ff9800', '#9e9e9e']  # Green, Blue, Orange, Gray
-        
-        fig_test_method.add_trace(go.Pie(
-            labels=methods,
-            values=method_values,
-            marker=dict(colors=method_colors),
-            textinfo='label+value+percent',
-            textfont=dict(size=14),
-            hole=0.4
-        ))
-        fig_test_method.update_layout(
-            title=f'Test Method Distribution - {version}',
-            height=400,
-            margin=dict(t=80, b=40, l=40, r=40)
-        )
-        test_method_chart_html = fig_test_method.to_html(include_plotlyjs=False, div_id='test-method-chart', full_html=False)
     
     # Create historical bug trend charts
     fig_historical = go.Figure()
@@ -3026,15 +2957,6 @@ def main():
             </ul>
         </div>
 
-        <div class="section-title">📊 Test Method Distribution</div>
-        <p><strong>Total Tests:</strong> {test_method_data['total_tests']} | <strong>Data Source:</strong> {test_method_data.get('source', 'unknown').upper()}</p>
-        
-        {test_method_chart_html if test_method_data['total_tests'] > 0 else '<div class="alert-box info"><strong>Note:</strong> No test method data available. Generate test_method_distribution_sub_exec_topics_{version.replace(".", "_")}.csv to enable this section.</div>'}
-        
-        {'<h3>Test Method Breakdown</h3><table><thead><tr><th>Method</th><th>Count</th><th>Percentage</th></tr></thead><tbody>' + ''.join([f"<tr><td><span style='color: {'#4caf50' if m == 'Automated' else '#2196f3' if m == 'Manual' else '#ff9800' if m == 'Automation Candidate' else '#9e9e9e'}; font-weight: bold;'>{m}</span></td><td>{test_method_data['by_method'].get(m, 0)}</td><td>{(test_method_data['by_method'].get(m, 0) / max(test_method_data['total_tests'], 1) * 100):.1f}%</td></tr>" for m in ['Automated', 'Manual', 'Automation Candidate', 'Not Specified']]) + '</tbody></table>' if test_method_data['total_tests'] > 0 else ''}
-        
-        {'<div class="observation-list"><h4>Automation Coverage Analysis</h4><ul><li><strong>Automation Rate:</strong> ' + f"{((test_method_data['by_method'].get('Automated', 0)) / max(test_method_data['total_tests'], 1) * 100):.1f}%" + ' of tests are automated</li><li><strong>Automation Candidates:</strong> ' + f"{test_method_data['by_method'].get('Automation Candidate', 0)}" + ' tests identified for future automation</li><li><strong>Manual Tests:</strong> ' + f"{test_method_data['by_method'].get('Manual', 0)}" + ' tests require manual execution</li></ul></div>' if test_method_data['total_tests'] > 0 else ''}
-
         <div class="footer">
             <p>Generated from Jira Project: DP (DefensePro) | Version: {version}</p>
             <p><strong>Note:</strong> This is a READ-ONLY report. No Jira issues were created or modified during this analysis.</p>
@@ -3092,7 +3014,6 @@ def main():
                 'chart_historical': fig_to_png(fig_historical),
                 'chart_high_sev': fig_to_png(fig_high_sev),
                 'chart_sub_exec': fig_to_png(fig_sub_exec),
-                'chart_test_method': fig_to_png(fig_test_method),
                 'chart_xray_exec': fig_to_png(fig_xray_exec),
                 'chart_xray_method': fig_to_png(fig_xray_method),
             }
@@ -3110,11 +3031,6 @@ def main():
     print(f"Automation: {automation_data['total_tests']} tests | {automation_data['pass_ratio']:.1f}% pass ratio")
     print(f"Critical Failures: {automation_data.get('critical_failures', 0)} tests failing on all platforms")
     print(f"Sub Test Executions: {sub_exec_completed}/{len(sub_execs)} completed")
-    if test_method_data['total_tests'] > 0:
-        automated = test_method_data['by_method'].get('Automated', 0)
-        manual = test_method_data['by_method'].get('Manual', 0)
-        candidates = test_method_data['by_method'].get('Automation Candidate', 0)
-        print(f"Test Methods: {automated} Automated | {manual} Manual | {candidates} Candidates")
     print("=" * 70)
     
     conn.close()

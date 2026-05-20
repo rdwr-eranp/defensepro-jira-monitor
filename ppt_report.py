@@ -291,7 +291,7 @@ def _slide_changelog(prs, build_changelogs):
 
     slide = prs.slides.add_slide(prs.slide_layouts[6])
     total_changes = sum(len(b['changes']) for b in build_changelogs)
-    _title_bar(slide, f"Build Changes — {total_changes} commits across {len(build_changelogs)} builds")
+    _title_bar(slide, f"Build Changes — {total_changes} product commits across {len(build_changelogs)} builds")
 
     txBox = slide.shapes.add_textbox(Inches(0.4), Inches(1.2), Inches(9.2), Inches(6))
     tf = txBox.text_frame
@@ -308,9 +308,24 @@ def _slide_changelog(prs, build_changelogs):
         p.font.color.rgb = GREEN if build.get('result') == 'SUCCESS' else RED
         p.space_before = Pt(10)
 
+        if not build.get('available', True):
+            p = tf.add_paragraph()
+            p.text = f"    Jenkins build unavailable (HTTP {build.get('http_status') or 'unknown'})"
+            p.font.size = Pt(9)
+            p.font.color.rgb = GRAY
+            continue
+
         for change in build['changes'][:6]:
             p = tf.add_paragraph()
             p.text = f"    {change['commitId']}  {change['msg'][:65]}  ({change['author']})"
+            p.font.size = Pt(9)
+            p.font.color.rgb = GRAY
+
+        if not build['changes']:
+            p = tf.add_paragraph()
+            skipped = build.get('skipped_change_count', 0)
+            suffix = f" ({skipped} CI trigger change(s) hidden)" if skipped else ""
+            p.text = f"    No product changes recorded{suffix}"
             p.font.size = Pt(9)
             p.font.color.rgb = GRAY
 
@@ -423,7 +438,7 @@ def generate_ppt(report_data, output_path):
     
     Chart images should be passed as PNG bytes under keys:
         chart_automation, chart_bugs, chart_historical, chart_high_sev,
-        chart_sub_exec, chart_test_method, chart_xray_exec, chart_xray_method
+        chart_sub_exec, chart_xray_exec, chart_xray_method
     
     Returns output_path if successful, None if python-pptx unavailable.
     """
@@ -473,13 +488,10 @@ def generate_ppt(report_data, output_path):
     _add_image_slide(prs, "Xray Execution Rate", report_data.get('chart_xray_exec'))
     _add_image_slide(prs, "Xray Test Method Distribution", report_data.get('chart_xray_method'))
 
-    # 13. Test Method chart
-    _add_image_slide(prs, "Test Method Distribution", report_data.get('chart_test_method'))
-
-    # 14. Build Changelog
+    # 13. Build Changelog
     _slide_changelog(prs, report_data.get('build_changelogs'))
 
-    # 15. Insights
+    # 14. Insights
     _slide_insights(prs, report_data.get('insights'), report_data.get('ai_insights'))
 
     prs.save(output_path)
