@@ -1272,6 +1272,7 @@ def get_automation_data(conn, jira, version, builds, sprint_start, sprint_end):
             JOIN test t2 ON te.test_id = t2.id
             WHERE te.version = '{version}'
               AND te.build IN ({builds_str})
+              AND te.start_time >= '{sprint_start}'
               AND te.mode = 'regression'
               {qdos_filter_no_t}
         """
@@ -1348,6 +1349,7 @@ def get_automation_data(conn, jira, version, builds, sprint_start, sprint_end):
             WHERE te.test_id IN ({test_ids_str})
               AND te.version = '{version}'
               AND te.build IN ({builds_str})
+              AND te.start_time >= '{sprint_start}'
               AND te.mode = 'regression'
               AND NOT (p.name LIKE '%-Routing' AND LOWER(t.name) LIKE '%antiscan%')
               {qdos_filter}
