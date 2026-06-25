@@ -1,0 +1,57 @@
+{
+  "rows": {
+    "old": 27477,
+    "new": 27573,
+    "common": 27477,
+    "only_old": 0,
+    "only_new": 96
+  },
+  "new_policy_flags": {
+    "is_new_test_true": 351,
+    "new_test_stable_true": 0,
+    "new_test_policy_applied_true": 347
+  },
+  "band_counts_old": {
+    "P3-Low": 19119,
+    "P1-High": 5861,
+    "P2-Medium": 2280,
+    "P0-Critical": 217
+  },
+  "band_counts_new": {
+    "P3-Low": 18969,
+    "P1-High": 6220,
+    "P2-Medium": 2166,
+    "P0-Critical": 218
+  },
+  "band_count_delta_new_minus_old": {
+    "P0-Critical": 1,
+    "P1-High": 359,
+    "P2-Medium": -114,
+    "P3-Low": -150
+  },
+  "changed_band_rows_in_common": 347,
+  "changed_transitions": [
+    {
+      "score_band_old": "P3-Low",
+      "score_band_new": "P1-High",
+      "count": 232
+    },
+    {
+      "score_band_old": "P2-Medium",
+      "score_band_new": "P1-High",
+      "count": 115
+    }
+  ],
+  "policy_applied_transition_counts": [
+    {
+      "score_band_old": "P3-Low",
+      "score_band_new": "P1-High",
+      "count": 232
+    },
+    {
+      "score_band_old": "P2-Medium",
+      "score_band_new": "P1-High",
+      "count": 115
+    }
+  ]
+}

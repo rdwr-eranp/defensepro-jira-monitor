@@ -1312,6 +1312,10 @@ def get_automation_data(conn, jira, version, builds, sprint_start, sprint_end):
         return {
             'total_tests': 0,
             'total_executions': 0,
+            'evaluated_tests': 0,
+            'passed_executions': 0,
+            'failed_executions': 0,
+            'pass_ratio_executions': 0,
             'passed': 0,
             'failed': 0,
             'pass_ratio': 0,
@@ -1372,14 +1376,20 @@ def get_automation_data(conn, jira, version, builds, sprint_start, sprint_end):
     executions_df['platform_type'] = executions_df['platform'].map(platform_type_map)
     executions_df['platform_type_mode'] = executions_df['platform_type'] + ' - ' + executions_df['mode']
 
-    # Deduplicate per (test_id, platform_type, mode) for platform-type breakdown.
-    # When the same test ran on multiple devices of the same type (e.g. ESXI + KVM = Software),
-    # keep only the most recent build's result to avoid double-counting.
-    pt_dedup_df = (
+    # Aggregate per (test_id, platform_type, mode) for platform-type breakdown.
+    # This matches release-readiness behavior: a test is considered passed for an
+    # aggregated mode if it has at least one Passed result in that mode bucket.
+    pt_grouped_df = (
         executions_df
-        .sort_values('build', ascending=False)
-        .drop_duplicates(subset=['test_id', 'platform_type', 'mode'])
+        .groupby(['test_id', 'platform_type', 'mode'], dropna=False)
+        .agg(
+            passed_any=('status_lower', lambda s: (s == 'passed').any()),
+            failed_any=('status_lower', lambda s: s.isin(['failed', 'error', 'fail']).any()),
+            executions=('status_lower', 'size'),
+        )
+        .reset_index()
     )
+    pt_grouped_df['platform_type_mode'] = pt_grouped_df['platform_type'] + ' - ' + pt_grouped_df['mode']
 
     # Identify new tests: test_ids that did NOT exist in the previous release
     baseline_ids_query = f"""
@@ -1391,18 +1401,24 @@ def get_automation_data(conn, jira, version, builds, sprint_start, sprint_end):
     baseline_ids_df = pd.read_sql(baseline_ids_query, conn)
     baseline_test_ids = set(baseline_ids_df['test_id'].tolist())
 
-    # Split deduplicated results into legacy tests (in baseline) and new tests (not in baseline)
-    pt_dedup_df['is_new_test'] = ~pt_dedup_df['test_id'].isin(baseline_test_ids)
-    legacy_pt_dedup_df = pt_dedup_df[~pt_dedup_df['is_new_test']]
-    new_pt_dedup_df = pt_dedup_df[pt_dedup_df['is_new_test']]
+    # Split aggregated results into legacy tests (in baseline) and new tests (not in baseline)
+    pt_grouped_df['is_new_test'] = ~pt_grouped_df['test_id'].isin(baseline_test_ids)
+    legacy_pt_grouped_df = pt_grouped_df[~pt_grouped_df['is_new_test']]
+    new_pt_grouped_df = pt_grouped_df[pt_grouped_df['is_new_test']]
 
-    # Calculate statistics
+    # Calculate execution-level statistics (raw latest executions per test/platform/mode)
     stats = {
         'total_tests': len(test_ids),
         'total_executions': len(executions_df),
-        'passed': len(executions_df[executions_df['status_lower'] == 'passed']),
-        'failed': len(executions_df[executions_df['status_lower'].isin(['failed', 'error', 'fail'])]),
-        'pass_ratio': len(executions_df[executions_df['status_lower'] == 'passed']) / max(len(executions_df), 1) * 100
+        'passed_executions': len(executions_df[executions_df['status_lower'] == 'passed']),
+        'failed_executions': len(executions_df[executions_df['status_lower'].isin(['failed', 'error', 'fail'])]),
+        'pass_ratio_executions': len(executions_df[executions_df['status_lower'] == 'passed']) / max(len(executions_df), 1) * 100,
+        # Summary values below are overwritten from deduplicated platform_type_mode stats
+        # so they align with the table shown in the report.
+        'evaluated_tests': 0,
+        'passed': 0,
+        'failed': 0,
+        'pass_ratio': 0,
     }
     
     # Get available tests for coverage calculation (from 10.12.0.0 and 10.11.0.0)
@@ -1445,13 +1461,14 @@ def get_automation_data(conn, jira, version, builds, sprint_start, sprint_end):
     
     platform_type_stats = []
     for pt_mode in all_combinations:
-        # Legacy tests: those present in the previous release baseline (used for coverage)
-        if len(legacy_pt_dedup_df) > 0 and pt_mode in legacy_pt_dedup_df['platform_type_mode'].values:
-            pt_df = legacy_pt_dedup_df[legacy_pt_dedup_df['platform_type_mode'] == pt_mode]
-            passed_count = len(pt_df[pt_df['status_lower'] == 'passed'])
-            failed_count = len(pt_df[pt_df['status_lower'].isin(['failed', 'error', 'fail'])])
+        # Legacy tests: those present in the previous release baseline (used for coverage).
+        # Count pass/fail on the same aggregated-mode basis used in release readiness.
+        if len(legacy_pt_grouped_df) > 0 and pt_mode in legacy_pt_grouped_df['platform_type_mode'].values:
+            pt_df = legacy_pt_grouped_df[legacy_pt_grouped_df['platform_type_mode'] == pt_mode]
+            passed_count = int(pt_df['passed_any'].sum())
+            failed_count = int(pt_df['failed_any'].sum())
             unique_tests = len(pt_df)
-            executions_count = unique_tests
+            executions_count = int(pt_df['executions'].sum())
         else:
             passed_count = 0
             failed_count = 0
@@ -1459,11 +1476,11 @@ def get_automation_data(conn, jira, version, builds, sprint_start, sprint_end):
             executions_count = 0
 
         # New tests: added in this release, not present in previous release
-        if len(new_pt_dedup_df) > 0 and pt_mode in new_pt_dedup_df['platform_type_mode'].values:
-            pt_new_df = new_pt_dedup_df[new_pt_dedup_df['platform_type_mode'] == pt_mode]
+        if len(new_pt_grouped_df) > 0 and pt_mode in new_pt_grouped_df['platform_type_mode'].values:
+            pt_new_df = new_pt_grouped_df[new_pt_grouped_df['platform_type_mode'] == pt_mode]
             new_tests_count = len(pt_new_df)
-            new_tests_passed = len(pt_new_df[pt_new_df['status_lower'] == 'passed'])
-            new_tests_failed = len(pt_new_df[pt_new_df['status_lower'].isin(['failed', 'error', 'fail'])])
+            new_tests_passed = int(pt_new_df['passed_any'].sum())
+            new_tests_failed = int(pt_new_df['failed_any'].sum())
         else:
             new_tests_count = 0
             new_tests_passed = 0
@@ -1488,6 +1505,15 @@ def get_automation_data(conn, jira, version, builds, sprint_start, sprint_end):
         })
     
     stats['platform_type_data'] = platform_type_stats
+
+    # Summary pass ratio must match the table basis: deduplicated platform_type_mode rows.
+    total_eval_tests = sum(p['tests'] for p in platform_type_stats)
+    total_eval_passed = sum(p['passed'] for p in platform_type_stats)
+    total_eval_failed = sum(p['failed'] for p in platform_type_stats)
+    stats['evaluated_tests'] = total_eval_tests
+    stats['passed'] = total_eval_passed
+    stats['failed'] = total_eval_failed
+    stats['pass_ratio'] = (total_eval_passed / max(total_eval_tests, 1)) * 100
     
     # Calculate overall coverage
     if platform_type_stats:
@@ -3102,7 +3128,7 @@ def main():
             <div class="metric-card automation">
                 <div class="metric-label">Automation Tests</div>
                 <div class="metric-number">{automation_data['total_tests']}</div>
-                <div class="metric-detail">Executions: {automation_data['total_executions']}<br>Pass Ratio: {automation_data['pass_ratio']:.1f}%</div>
+                <div class="metric-detail">Evaluated (dedup): {automation_data.get('evaluated_tests', 0)} | Raw executions: {automation_data['total_executions']}<br>Pass Ratio: {automation_data['pass_ratio']:.1f}%</div>
             </div>
             <div class="metric-card sub-exec">
                 <div class="metric-label">Sub Test Executions</div>
@@ -3116,7 +3142,7 @@ def main():
 
         <div class="section-title">🤖 CI Iteration - Automation Status</div>
         <p><strong>Tests executed during {'current CI cycle (from ' + ci_run_start + ')' if ci_run_start else 'sprint'}:</strong> {automation_data['total_tests']} unique tests, {automation_data['total_executions']} total executions</p>
-        <p><strong>Overall results:</strong> Passed: {automation_data['passed']} | Failed: {automation_data['failed']} | Pass Ratio: {automation_data['pass_ratio']:.1f}%</p>
+        <p><strong>Overall results (dedup by platform-type/mode):</strong> Passed: {automation_data['passed']} | Failed: {automation_data['failed']} | Pass Ratio: {automation_data['pass_ratio']:.1f}%</p>
         {'<p><strong>Test Coverage:</strong> Overall: ' + f"{automation_data.get('overall_coverage', 0):.1f}%" + '</p>' if automation_data.get('overall_coverage', 0) > 0 else ''}
         
         {coverage_progress_html}

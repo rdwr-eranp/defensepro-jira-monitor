@@ -1,0 +1,300 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Active Sub Test Executions - 10.14.0.0</title>
+  <style>
+    :root {
+      --bg: #f3f6fb;
+      --panel: #ffffff;
+      --ink: #0b1f36;
+      --muted: #4e647e;
+      --brand: #0b7285;
+      --accent: #f59f00;
+      --ok: #2b8a3e;
+      --gap: #c92a2a;
+      --line: #dbe4f0;
+    }
+    body {
+      margin: 0;
+      font-family: "Segoe UI", Tahoma, sans-serif;
+      background: linear-gradient(180deg, #e8f2ff 0%, var(--bg) 30%);
+      color: var(--ink);
+    }
+    .wrap {
+      max-width: 1200px;
+      margin: 0 auto;
+      padding: 24px;
+    }
+    .hero {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      padding: 20px;
+      box-shadow: 0 8px 18px rgba(10, 36, 66, 0.08);
+      margin-bottom: 18px;
+    }
+    h1 { margin: 0 0 6px 0; font-size: 28px; }
+    .sub { color: var(--muted); margin: 0; }
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 12px;
+      margin-top: 14px;
+    }
+    .card {
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      padding: 14px;
+      background: #fbfdff;
+    }
+    .card-label { color: var(--muted); font-size: 13px; }
+    .card-value { font-size: 28px; font-weight: 700; margin-top: 6px; }
+    .note {
+      border-left: 4px solid var(--accent);
+      background: #fff8e6;
+      padding: 10px 12px;
+      border-radius: 8px;
+      margin-top: 14px;
+      color: #6a4a00;
+    }
+    .section {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      margin-top: 16px;
+      padding: 16px;
+    }
+    .section h2 { margin: 0 0 10px 0; font-size: 20px; }
+    .report-table { width: 100%; border-collapse: collapse; font-size: 14px; }
+    .report-table th, .report-table td { border: 1px solid var(--line); padding: 8px; text-align: left; vertical-align: top; }
+    .report-table thead th { background: #edf5ff; }
+    .empty { color: var(--muted); font-style: italic; }
+    .footer { color: var(--muted); font-size: 12px; margin-top: 14px; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="hero">
+      <h1>Active Sub Test Execution Report</h1>
+      <p class="sub">Release 10.14.0.0</p>
+      <div class="grid">
+    <div class="card">
+        <div class="card-label">Total sub test executions</div>
+        <div class="card-value">48</div>
+    </div>
+    
+    <div class="card">
+        <div class="card-label">Active executions (In Progress + Not Started)</div>
+        <div class="card-value">10</div>
+    </div>
+    
+    <div class="card">
+        <div class="card-label">Active ATP executions (excluded from gap)</div>
+        <div class="card-value">8</div>
+    </div>
+    
+    <div class="card">
+        <div class="card-label">Active NON-ATP executions (counted as gap)</div>
+        <div class="card-value">2</div>
+    </div>
+    </div>
+      <div class="note"><strong>Gap Rule Applied:</strong> Items with ATP in summary are active but excluded from gap count.</div>
+    </div>
+
+    <div class="section">
+      <h2>Gap Items (Active NON-ATP)</h2>
+      <table border="1" class="dataframe report-table">
+  <thead>
+    <tr style="text-align: right;">
+      <th>key</th>
+      <th>summary</th>
+      <th>status</th>
+      <th>category</th>
+      <th>created</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>DP-113479</td>
+      <td>TLS-FP Stabilization- Functionality testcases</td>
+      <td>In Progress</td>
+      <td>In Progress</td>
+      <td>2026-06-05</td>
+    </tr>
+    <tr>
+      <td>DP-113544</td>
+      <td>WebDDOS&nbsp;&nbsp;Under Attack - Documentation</td>
+      <td>In Progress</td>
+      <td>In Progress</td>
+      <td>2026-06-15</td>
+    </tr>
+  </tbody>
+</table>
+    </div>
+
+    <div class="section">
+      <h2>Active ATP Items (Excluded From Gap)</h2>
+      <table border="1" class="dataframe report-table">
+  <thead>
+    <tr style="text-align: right;">
+      <th>key</th>
+      <th>summary</th>
+      <th>status</th>
+      <th>category</th>
+      <th>created</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>DP-113601</td>
+      <td>ATP - 10.14.0.0 - UHT - Transparent</td>
+      <td>In Progress</td>
+      <td>In Progress</td>
+      <td>2026-06-18</td>
+    </tr>
+    <tr>
+      <td>DP-113602</td>
+      <td>ATP - 10.14.0.0&nbsp;&nbsp;- DP_VA - KVM&nbsp;&nbsp;- Transparent</td>
+      <td>In Progress</td>
+      <td>In Progress</td>
+      <td>2026-06-18</td>
+    </tr>
+    <tr>
+      <td>DP-113606</td>
+      <td>ATP - 10.14.0.0 - MRQ - Transparent Mode</td>
+      <td>In Progress</td>
+      <td>In Progress</td>
+      <td>2026-06-18</td>
+    </tr>
+    <tr>
+      <td>DP-113599</td>
+      <td>ATP - 10.14.0.0 - HT2 - IP Mode</td>
+      <td>NaN</td>
+      <td>Not Started</td>
+      <td>2026-06-18</td>
+    </tr>
+    <tr>
+      <td>DP-113600</td>
+      <td>ATP - 10.14.0.0&nbsp;&nbsp;- VL3 - Transparent Mode</td>
+      <td>NaN</td>
+      <td>Not Started</td>
+      <td>2026-06-18</td>
+    </tr>
+    <tr>
+      <td>DP-113603</td>
+      <td>ATP - 10.14.0.0&nbsp;&nbsp;- DP_VA - VMware - Transparent Mode</td>
+      <td>NaN</td>
+      <td>Not Started</td>
+      <td>2026-06-18</td>
+    </tr>
+    <tr>
+      <td>DP-113604</td>
+      <td>ATP - 10.14.0.0 - MR2 - Transparent Mode</td>
+      <td>NaN</td>
+      <td>Not Started</td>
+      <td>2026-06-18</td>
+    </tr>
+    <tr>
+      <td>DP-113605</td>
+      <td>ATP - 10.14.0.0&nbsp;&nbsp;- DP VA - Single ISO</td>
+      <td>NaN</td>
+      <td>Not Started</td>
+      <td>2026-06-18</td>
+    </tr>
+  </tbody>
+</table>
+    </div>
+
+    <div class="section">
+      <h2>All Active Items</h2>
+      <table border="1" class="dataframe report-table">
+  <thead>
+    <tr style="text-align: right;">
+      <th>key</th>
+      <th>summary</th>
+      <th>status</th>
+      <th>category</th>
+      <th>created</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>DP-113479</td>
+      <td>TLS-FP Stabilization- Functionality testcases</td>
+      <td>In Progress</td>
+      <td>In Progress</td>
+      <td>2026-06-05</td>
+    </tr>
+    <tr>
+      <td>DP-113544</td>
+      <td>WebDDOS&nbsp;&nbsp;Under Attack - Documentation</td>
+      <td>In Progress</td>
+      <td>In Progress</td>
+      <td>2026-06-15</td>
+    </tr>
+    <tr>
+      <td>DP-113601</td>
+      <td>ATP - 10.14.0.0 - UHT - Transparent</td>
+      <td>In Progress</td>
+      <td>In Progress</td>
+      <td>2026-06-18</td>
+    </tr>
+    <tr>
+      <td>DP-113602</td>
+      <td>ATP - 10.14.0.0&nbsp;&nbsp;- DP_VA - KVM&nbsp;&nbsp;- Transparent</td>
+      <td>In Progress</td>
+      <td>In Progress</td>
+      <td>2026-06-18</td>
+    </tr>
+    <tr>
+      <td>DP-113606</td>
+      <td>ATP - 10.14.0.0 - MRQ - Transparent Mode</td>
+      <td>In Progress</td>
+      <td>In Progress</td>
+      <td>2026-06-18</td>
+    </tr>
+    <tr>
+      <td>DP-113599</td>
+      <td>ATP - 10.14.0.0 - HT2 - IP Mode</td>
+      <td>NaN</td>
+      <td>Not Started</td>
+      <td>2026-06-18</td>
+    </tr>
+    <tr>
+      <td>DP-113600</td>
+      <td>ATP - 10.14.0.0&nbsp;&nbsp;- VL3 - Transparent Mode</td>
+      <td>NaN</td>
+      <td>Not Started</td>
+      <td>2026-06-18</td>
+    </tr>
+    <tr>
+      <td>DP-113603</td>
+      <td>ATP - 10.14.0.0&nbsp;&nbsp;- DP_VA - VMware - Transparent Mode</td>
+      <td>NaN</td>
+      <td>Not Started</td>
+      <td>2026-06-18</td>
+    </tr>
+    <tr>
+      <td>DP-113604</td>
+      <td>ATP - 10.14.0.0 - MR2 - Transparent Mode</td>
+      <td>NaN</td>
+      <td>Not Started</td>
+      <td>2026-06-18</td>
+    </tr>
+    <tr>
+      <td>DP-113605</td>
+      <td>ATP - 10.14.0.0&nbsp;&nbsp;- DP VA - Single ISO</td>
+      <td>NaN</td>
+      <td>Not Started</td>
+      <td>2026-06-18</td>
+    </tr>
+  </tbody>
+</table>
+    </div>
+
+    <p class="footer">Generated 2026-06-22 11:57:49</p>
+  </div>
+</body>
+</html>

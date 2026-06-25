@@ -165,3 +165,8 @@ When asked to assess release readiness, the agent MUST evaluate the following pa
 - **Test Coverage**: % of tests executed, gaps identified
 - **Quality Metrics**: Pass rate %, trend analysis, failing features
 - **Recommendation**: GO / CONDITIONAL GO / NO-GO with justification
+
+## Diagram Output
+
+When users request a visual explanation, use the Mermaid skill at `.github/skills/mermaid/SKILL.md`.
+Prefer Mermaid flowcharts for release-readiness decisions, bug lifecycle, and CI priority bucket communication.

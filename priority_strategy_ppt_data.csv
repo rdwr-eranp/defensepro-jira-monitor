@@ -1,0 +1,4 @@
+scenario,tests_p4,tests_p4_pct,runtime_saved_h,runtime_saved_days,wall_saved_h,wall_saved_days,hist_failed_exec_in_p4,curr_failed_exec_in_p4,risk,risk_rationale
+Strict,3144,11.402458927211402,426.3895124804377,17.766229686684905,2.602160611805516,0.10842335882522984,7,0,Low,Small defer set; near-zero current failures and negligible historical failure volume.
+Balanced,5899,21.394117433721394,706.8351509440121,29.45146462266717,35.317114499295,1.471546437470625,612,0,Medium-Low,Meaningful savings with controlled historical failure exposure.
+Aggressive,8099,29.372937293729372,930.7413911896812,38.78089129957005,50.08999704232764,2.087083210096985,2295,0,Medium,Highest savings but larger deferred historical-failure footprint.

@@ -36,7 +36,7 @@ print()
 
 print("STEP 1: Enter Version")
 version = input("Version (e.g., 10.12.0.0) [default: 10.12.0.0]: ").strip() or "10.12.0.0"
-print(f"✓ Version set to: {version}\n")
+print(f"[OK] Version set to: {version}\n")
 
 def get_prior_versions(version):
     """Return baseline versions for coverage comparison."""
@@ -961,6 +961,12 @@ if jira:
             not_started = len(df_exec[df_exec['category'] == 'Not Started'])
             completion_rate = (completed / total * 100) if total > 0 else 0
             
+            # ATP exclusion: identify active items with ATP in summary
+            df_exec['is_atp'] = df_exec['summary'].fillna('').str.contains('ATP', case=False, regex=False)
+            active_mask = df_exec['category'].isin(['In Progress', 'Not Started'])
+            active_atp = len(df_exec[active_mask & df_exec['is_atp']])
+            active_non_atp = len(df_exec[active_mask & ~df_exec['is_atp']])
+            
             # Group by week for burndown
             df_exec['week'] = df_exec['created'].dt.to_period('W').apply(lambda r: r.start_time)
             exec_by_week = df_exec.groupby('week').size().reset_index(name='created')
@@ -977,6 +983,8 @@ if jira:
                 'in_progress': in_progress,
                 'not_started': not_started,
                 'completion_rate': completion_rate,
+                'active_atp': active_atp,
+                'active_non_atp': active_non_atp,
                 'by_week': exec_by_week,
                 'status_by_week': status_by_week,
                 'details': df_exec
@@ -1000,7 +1008,10 @@ else:
     print("\n⚠️ Skipping sub test execution analysis (Jira not connected)")
 
 # Save all data
-output_prefix = f"Release_{version.replace('.', '_')}_Builds_{'_'.join(builds)}"
+# Use build range in filename instead of listing all builds to avoid exceeding path length limits
+builds_min = min(int(b) for b in builds)
+builds_max = max(int(b) for b in builds)
+output_prefix = f"Release_{version.replace('.', '_')}_Builds_{builds_min}_to_{builds_max}"
 df_overall.to_csv(f'{output_prefix}_overall.csv', index=False)
 df_platform.to_csv(f'{output_prefix}_platform_mode.csv', index=False)
 df_platform_summary.to_csv(f'{output_prefix}_platform_summary.csv', index=False)
@@ -1533,6 +1544,8 @@ if sub_exec_data is not None:
     in_progress = sub_exec_data['in_progress']
     not_started = sub_exec_data['not_started']
     completion_rate = sub_exec_data['completion_rate']
+    active_atp = sub_exec_data.get('active_atp', 0)
+    active_non_atp = sub_exec_data.get('active_non_atp', 0)
     
     html_content += f"""
     <div class="summary-box">
@@ -1549,16 +1562,17 @@ if sub_exec_data is not None:
                 <div class="label">{completion_rate:.1f}% Complete</div>
             </div>
             <div class="metric-card">
-                <div class="label">In Progress</div>
-                <div class="value">{in_progress}</div>
-                <div class="label">Currently executing</div>
+                <div class="label">Active (Non-ATP Gap)</div>
+                <div class="value">{active_non_atp}</div>
+                <div class="label">Release gate risk</div>
             </div>
-            <div class="metric-card">
-                <div class="label">Not Started</div>
-                <div class="value">{not_started}</div>
-                <div class="label">Pending execution</div>
+            <div class="metric-card" style="background: linear-gradient(135deg, #6c5ce7, #a29bfe);">
+                <div class="label">Active ATP (Excluded)</div>
+                <div class="value">{active_atp}</div>
+                <div class="label">No release impact</div>
             </div>
         </div>
+        <p style="margin-top: 10px; font-size: 13px; color: #666;"><strong>Note:</strong> Items with &quot;ATP&quot; in summary are excluded from release readiness gap count.</p>
         
         <h3>Execution Progress by Week</h3>
         <table>
@@ -1782,6 +1796,224 @@ if sub_exec_data is not None:
         const ctx = document.getElementById('burndownChart').getContext('2d');
         new Chart(ctx, config);
     </script>
+"""
+
+# Calculate readiness metrics
+# Extract overall metrics from the first row of df_overall
+overall_coverage = df_overall['coverage_percentage'].iloc[0] if len(df_overall) > 0 and 'coverage_percentage' in df_overall.columns else 0
+overall_pass_ratio = df_overall['pass_ratio'].iloc[0] if len(df_overall) > 0 and 'pass_ratio' in df_overall.columns else 0
+
+# Get platform type coverage
+fpga_coverage = df_platform_type_summary.loc[df_platform_type_summary['platform_type'] == 'FPGA', 'coverage_of_total'].values[0] if 'FPGA' in df_platform_type_summary['platform_type'].values else 0
+software_coverage = df_platform_type_summary.loc[df_platform_type_summary['platform_type'] == 'Software', 'coverage_of_total'].values[0] if 'Software' in df_platform_type_summary['platform_type'].values else 0
+ezchip_coverage = df_platform_type_summary.loc[df_platform_type_summary['platform_type'] == 'EZchip', 'coverage_of_total'].values[0] if 'EZchip' in df_platform_type_summary['platform_type'].values else 0
+
+# Determine readiness status from bug counts (already queried from Jira)
+bugs_critical = len([b for b in bugs_all if 'Critical' in str(b.fields.priority)]) if jira and bugs_all else 0
+bugs_on_dev = len(bugs_dev) if jira and bugs_dev else 0
+bugs_on_qa = len(bugs_qa) if jira and bugs_qa else 0
+
+readiness_score = 0
+readiness_status = "NO-GO"
+status_color = "#dc3545"
+
+# Scoring: Coverage (40%), Pass Ratio (35%), Bugs (15%), Test Execution (10%)
+if overall_coverage >= 95:
+    readiness_score += 40
+elif overall_coverage >= 90:
+    readiness_score += 30
+elif overall_coverage >= 85:
+    readiness_score += 20
+
+if overall_pass_ratio >= 98:
+    readiness_score += 35
+elif overall_pass_ratio >= 95:
+    readiness_score += 25
+elif overall_pass_ratio >= 90:
+    readiness_score += 15
+
+if bugs_critical == 0 and bugs_on_dev <= 1:
+    readiness_score += 15
+elif bugs_on_dev <= 3:
+    readiness_score += 10
+else:
+    readiness_score += 5
+
+if sub_exec_data and sub_exec_data.get('completion_rate', 0) >= 75:
+    readiness_score += 10
+elif sub_exec_data and sub_exec_data.get('completion_rate', 0) >= 50:
+    readiness_score += 5
+
+if readiness_score >= 85:
+    readiness_status = "GO"
+    status_color = "#28a745"
+elif readiness_score >= 70:
+    readiness_status = "CONDITIONAL GO"
+    status_color = "#ffc107"
+else:
+    readiness_status = "NO-GO"
+    status_color = "#dc3545"
+
+# Build insights
+insights = []
+if overall_coverage >= 95:
+    insights.append(f"<li><strong>✓ Excellent Coverage:</strong> {overall_coverage:.1f}% test coverage exceeds the 95% target.</li>")
+elif overall_coverage >= 90:
+    insights.append(f"<li><strong>⚠ Good Coverage:</strong> {overall_coverage:.1f}% test coverage is acceptable but slightly below the 95% target. Monitor remaining untested cases.</li>")
+else:
+    insights.append(f"<li><strong>✗ Coverage Gap:</strong> {overall_coverage:.1f}% test coverage is below the 90% threshold. Additional testing required.</li>")
+
+if overall_pass_ratio >= 98:
+    insights.append(f"<li><strong>✓ High Quality:</strong> {overall_pass_ratio:.2f}% pass ratio indicates excellent test results.</li>")
+elif overall_pass_ratio >= 95:
+    insights.append(f"<li><strong>⚠ Acceptable Quality:</strong> {overall_pass_ratio:.2f}% pass ratio is acceptable. Investigate failing tests.</li>")
+else:
+    insights.append(f"<li><strong>✗ Quality Concern:</strong> {overall_pass_ratio:.2f}% pass ratio is below acceptable levels. Requires immediate attention.</li>")
+
+if bugs_critical == 0:
+    insights.append(f"<li><strong>✓ No Critical Bugs:</strong> No critical priority bugs blocking release.</li>")
+else:
+    insights.append(f"<li><strong>✗ Critical Issues:</strong> {bugs_critical} critical bug(s) must be resolved before release.</li>")
+
+if bugs_on_dev == 0:
+    insights.append(f"<li><strong>✓ Dev Queue Clear:</strong> No bugs remaining in development.</li>")
+elif bugs_on_dev <= 2:
+    insights.append(f"<li><strong>⚠ Minor Dev Items:</strong> {bugs_on_dev} bug(s) in development pipeline.</li>")
+else:
+    insights.append(f"<li><strong>✗ Development Backlog:</strong> {bugs_on_dev} bug(s) still in development phase.</li>")
+
+if fpga_coverage >= 95 and software_coverage >= 95:
+    insights.append(f"<li><strong>✓ Platform Parity:</strong> All platform types achieve >95% coverage.</li>")
+elif fpga_coverage < 80 or software_coverage < 80:
+    insights.append(f"<li><strong>✗ Platform Gap:</strong> Coverage imbalance detected - FPGA: {fpga_coverage:.1f}%, Software: {software_coverage:.1f}%.</li>")
+
+if sub_exec_data and sub_exec_data.get('completion_rate', 0) >= 75:
+    insights.append(f"<li><strong>✓ Test Execution On Track:</strong> {sub_exec_data['completion_rate']:.1f}% of sub test executions completed.</li>")
+else:
+    insights.append(f"<li><strong>⚠ Test Execution In Progress:</strong> {sub_exec_data['completion_rate']:.1f}% of sub test executions completed.</li>")
+
+html_content += f"""
+    <div id="readiness" style="background: linear-gradient(135deg, {status_color}15 0%, {status_color}05 100%); border: 3px solid {status_color}; border-radius: 8px; padding: 30px; margin-bottom: 30px;">
+        <h2 style="color: {status_color}; margin-top: 0;">Executive Summary & Release Readiness Assessment</h2>
+        
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 20px;">
+            <div style="background: white; padding: 20px; border-radius: 6px; border-left: 4px solid {status_color};">
+                <div style="font-size: 14px; color: #666; font-weight: bold;">OVERALL READINESS STATUS</div>
+                <div style="font-size: 32px; color: {status_color}; font-weight: bold; margin-top: 10px;">{readiness_status}</div>
+                <div style="font-size: 12px; color: #999; margin-top: 8px;">Readiness Score: {readiness_score:.0f}/100</div>
+            </div>
+            
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
+                <div style="background: white; padding: 15px; border-radius: 6px; border-top: 3px solid #007bff;">
+                    <div style="font-size: 12px; color: #666;">Test Coverage</div>
+                    <div style="font-size: 22px; font-weight: bold; color: #007bff;">{overall_coverage:.1f}%</div>
+                    <div style="font-size: 11px; color: #999;">Target: >95%</div>
+                </div>
+                <div style="background: white; padding: 15px; border-radius: 6px; border-top: 3px solid #28a745;">
+                    <div style="font-size: 12px; color: #666;">Pass Ratio</div>
+                    <div style="font-size: 22px; font-weight: bold; color: #28a745;">{overall_pass_ratio:.2f}%</div>
+                    <div style="font-size: 11px; color: #999;">Target: >98%</div>
+                </div>
+                <div style="background: white; padding: 15px; border-radius: 6px; border-top: 3px solid {'#dc3545' if bugs_on_dev > 0 else '#17a2b8'};">
+                    <div style="font-size: 12px; color: #666;">Bugs on Dev</div>
+                    <div style="font-size: 22px; font-weight: bold; color: {'#dc3545' if bugs_on_dev > 0 else '#17a2b8'};">{bugs_on_dev}</div>
+                    <div style="font-size: 11px; color: #999;">Target: 0</div>
+                </div>
+                <div style="background: white; padding: 15px; border-radius: 6px; border-top: 3px solid {'#ffc107' if bugs_on_qa > 0 else '#17a2b8'};">
+                    <div style="font-size: 12px; color: #666;">Bugs on QA</div>
+                    <div style="font-size: 22px; font-weight: bold; color: {'#ffc107' if bugs_on_qa > 0 else '#17a2b8'};">{bugs_on_qa}</div>
+                    <div style="font-size: 11px; color: #999;">Target: 0</div>
+                </div>
+            </div>
+        </div>
+        
+        <h3 style="margin-top: 25px; margin-bottom: 15px; color: {status_color};">Key Insights</h3>
+        <ul style="line-height: 1.8; color: #333;">
+            {''.join(insights)}
+        </ul>
+        
+        <h3 style="margin-top: 25px; margin-bottom: 15px; color: {status_color};">Recommendations</h3>
+        <ul style="line-height: 1.8; color: #333;">
+"""
+
+# Generate recommendations
+if readiness_status == "GO":
+    html_content += """            <li><strong>Release Approved:</strong> Release can proceed to production. All critical metrics are within acceptable ranges.</li>
+            <li><strong>Post-Release Monitoring:</strong> Continue monitoring test execution and bug reports for the first 48 hours post-release.</li>
+"""
+elif readiness_status == "CONDITIONAL GO":
+    html_content += """            <li><strong>Conditional Approval:</strong> Release can proceed with the following conditions:</li>
+            <ul>
+"""
+    if overall_coverage < 95:
+        html_content += f"                <li>Increase test coverage from {overall_coverage:.1f}% to at least 95% before release.</li>\n"
+    if bugs_on_dev > 1:
+        html_content += f"                <li>Reduce development backlog from {bugs_on_dev} to 0 bugs before release.</li>\n"
+    if overall_pass_ratio < 98:
+        html_content += f"                <li>Improve pass ratio from {overall_pass_ratio:.2f}% to 98% before release.</li>\n"
+    if sub_exec_data and sub_exec_data.get('completion_rate', 0) < 80:
+        html_content += f"                <li>Complete at least 80% of sub test executions (currently {sub_exec_data['completion_rate']:.1f}%).</li>\n"
+    html_content += """            </ul>
+            <li><strong>Validation Timeline:</strong> Re-run readiness assessment after addressing above items.</li>
+"""
+else:  # NO-GO
+    html_content += """            <li><strong>Release Blocked:</strong> The following issues must be resolved before release consideration:</li>
+            <ul>
+"""
+    if overall_coverage < 85:
+        html_content += f"                <li>Critical: Improve test coverage from {overall_coverage:.1f}% to at least 90% minimum.</li>\n"
+    if bugs_critical > 0:
+        html_content += f"                <li>Critical: Resolve {bugs_critical} critical-priority bug(s).</li>\n"
+    if bugs_on_dev > 5:
+        html_content += f"                <li>Major: Reduce {bugs_on_dev} bugs in development backlog.</li>\n"
+    if overall_pass_ratio < 95:
+        html_content += f"                <li>Major: Improve pass ratio from {overall_pass_ratio:.2f}% to at least 95%.</li>\n"
+    html_content += """            </ul>
+            <li><strong>Next Steps:</strong> Address critical items and rerun full release readiness assessment.</li>
+"""
+
+html_content += """        </ul>
+        
+        <h3 style="margin-top: 25px; margin-bottom: 15px; color: #666;">Release Readiness Criteria</h3>
+        <table style="width: 100%; margin-top: 10px;">
+            <tr style="background: #f9f9f9;">
+                <th style="text-align: left; padding: 10px; border-bottom: 2px solid #ddd;">Criterion</th>
+                <th style="text-align: center; padding: 10px; border-bottom: 2px solid #ddd;">Target</th>
+                <th style="text-align: center; padding: 10px; border-bottom: 2px solid #ddd;">Current</th>
+                <th style="text-align: center; padding: 10px; border-bottom: 2px solid #ddd;">Status</th>
+            </tr>
+            <tr>
+                <td style="padding: 10px; border-bottom: 1px solid #eee;">Test Coverage (Regression Mode)</td>
+                <td style="text-align: center; padding: 10px; border-bottom: 1px solid #eee;">&ge;95%</td>
+                <td style="text-align: center; padding: 10px; border-bottom: 1px solid #eee;"><strong>{overall_coverage:.1f}%</strong></td>
+                <td style="text-align: center; padding: 10px; border-bottom: 1px solid #eee;">{"✓" if overall_coverage >= 95 else "⚠" if overall_coverage >= 90 else "✗"}</td>
+            </tr>
+            <tr>
+                <td style="padding: 10px; border-bottom: 1px solid #eee;">Test Pass Ratio</td>
+                <td style="text-align: center; padding: 10px; border-bottom: 1px solid #eee;">&ge;98%</td>
+                <td style="text-align: center; padding: 10px; border-bottom: 1px solid #eee;"><strong>{overall_pass_ratio:.2f}%</strong></td>
+                <td style="text-align: center; padding: 10px; border-bottom: 1px solid #eee;">{"✓" if overall_pass_ratio >= 98 else "⚠" if overall_pass_ratio >= 95 else "✗"}</td>
+            </tr>
+            <tr>
+                <td style="padding: 10px; border-bottom: 1px solid #eee;">Critical Priority Bugs</td>
+                <td style="text-align: center; padding: 10px; border-bottom: 1px solid #eee;">0</td>
+                <td style="text-align: center; padding: 10px; border-bottom: 1px solid #eee;"><strong>{bugs_critical}</strong></td>
+                <td style="text-align: center; padding: 10px; border-bottom: 1px solid #eee;">{"✓" if bugs_critical == 0 else "✗"}</td>
+            </tr>
+            <tr>
+                <td style="padding: 10px; border-bottom: 1px solid #eee;">Bugs on Development</td>
+                <td style="text-align: center; padding: 10px; border-bottom: 1px solid #eee;">0-1</td>
+                <td style="text-align: center; padding: 10px; border-bottom: 1px solid #eee;"><strong>{bugs_on_dev}</strong></td>
+                <td style="text-align: center; padding: 10px; border-bottom: 1px solid #eee;">{"✓" if bugs_on_dev <= 1 else "⚠" if bugs_on_dev <= 3 else "✗"}</td>
+            </tr>
+            <tr>
+                <td style="padding: 10px; border-bottom: 1px solid #eee;">Sub Test Execution Completion</td>
+                <td style="text-align: center; padding: 10px; border-bottom: 1px solid #eee;">&ge;75%</td>
+                <td style="text-align: center; padding: 10px; border-bottom: 1px solid #eee;"><strong>{sub_exec_data['completion_rate']:.1f if sub_exec_data else 0:.1f}%</strong></td>
+                <td style="text-align: center; padding: 10px; border-bottom: 1px solid #eee;">{"✓" if (sub_exec_data and sub_exec_data['completion_rate'] >= 75) else "⚠" if (sub_exec_data and sub_exec_data['completion_rate'] >= 50) else "✗"}</td>
+            </tr>
+        </table>
+    </div>
 """
 
 html_content += f"""    

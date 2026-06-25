@@ -1,0 +1,7 @@
+platform_type,mode,value
+FPGA,Routing,0.90
+Software,Routing,0.85
+EZchip,Routing,0.80
+FPGA,Transparent,0.70
+Software,Transparent,0.65
+EZchip,Transparent,0.60
