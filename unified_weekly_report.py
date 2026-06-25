@@ -826,77 +826,72 @@ def get_coverage_progress(conn, version, ci_run_start):
         if baseline_total == 0:
             return None
 
-        daily_query = f"""
-            SELECT te.start_time::date as run_date,
-                   COUNT(DISTINCT te.test_id) as unique_tests,
-                   COUNT(*) as total_executions,
-                   SUM(CASE WHEN LOWER(te.status) = 'passed' THEN 1 ELSE 0 END) as passed,
-                   SUM(CASE WHEN LOWER(te.status) IN ('failed','error','fail') THEN 1 ELSE 0 END) as failed
+        # Pull raw per-execution rows once so cumulative coverage AND pass ratio can be
+        # computed on the SAME aggregated-mode basis used by get_automation_data():
+        # a (test_id, platform_type, mode) group counts as "passed" if it passed in any
+        # execution. This keeps the progress pass ratio consistent with the summary/table.
+        rows_query = f"""
+            SELECT te.test_id,
+                   CASE WHEN d.platform IN ('UHT','MRQP','MR2') THEN 'FPGA'
+                        WHEN d.platform IN ('ESXI','KVM','VL3','HT2') THEN 'Software'
+                        WHEN d.platform IN ('MRQ_X','MRQX') THEN 'EZchip' ELSE 'Other' END as platform_type,
+                   CASE WHEN p.name LIKE '%-Routing' THEN 'Routing' ELSE 'Transparent' END as mode,
+                   te.start_time::date as run_date,
+                   LOWER(te.status) as status
             FROM test_execution te
+            JOIN device d ON te.device_id = d.id
+            JOIN profile p ON te.profile_id = p.id
             JOIN test t ON te.test_id = t.id
             WHERE te.version = '{version}' AND te.mode = 'regression'
               AND te.start_time >= '{ci_run_start}'
+              AND NOT (p.name LIKE '%-Routing' AND LOWER(t.name) LIKE '%antiscan%')
               {qdos_filter}
-            GROUP BY te.start_time::date
-            ORDER BY run_date
+              AND d.platform IN ('UHT','MRQP','MR2','ESXI','KVM','VL3','HT2','MRQ_X','MRQX')
         """
-        daily_df = pd.read_sql(daily_query, conn)
+        rows_df = pd.read_sql(rows_query, conn)
 
-        if daily_df.empty:
+        if rows_df.empty:
             return None
 
-        cumulative_query = f"""
-            SELECT d.run_date, COUNT(DISTINCT sub.test_id || '-' || sub.platform_type || '-' || sub.mode) as cumulative_pt_tests
-            FROM (SELECT DISTINCT start_time::date as run_date FROM test_execution
-                  WHERE version = '{version}' AND mode = 'regression'
-                  AND start_time >= '{ci_run_start}') d
-            CROSS JOIN LATERAL (
-                SELECT DISTINCT te.test_id,
-                    CASE WHEN dev.platform IN ('UHT','MRQP','MR2') THEN 'FPGA'
-                         WHEN dev.platform IN ('ESXI','KVM','VL3','HT2') THEN 'Software'
-                         WHEN dev.platform IN ('MRQ_X','MRQX') THEN 'EZchip' ELSE 'Other' END as platform_type,
-                    CASE WHEN p.name LIKE '%-Routing' THEN 'Routing' ELSE 'Transparent' END as mode
-                FROM test_execution te
-                JOIN device dev ON te.device_id = dev.id
-                JOIN profile p ON te.profile_id = p.id
-                JOIN test t ON te.test_id = t.id
-                WHERE te.version = '{version}' AND te.mode = 'regression'
-                  AND te.start_time >= '{ci_run_start}'
-                  AND te.start_time < (d.run_date + interval '1 day')
-                  AND NOT (p.name LIKE '%-Routing' AND LOWER(t.name) LIKE '%antiscan%')
-                  {qdos_filter}
-                  AND dev.platform IN ('UHT','MRQP','MR2','ESXI','KVM','VL3','HT2','MRQ_X','MRQX')
-            ) sub
-            GROUP BY d.run_date ORDER BY d.run_date
-        """
-        cumulative_df = pd.read_sql(cumulative_query, conn)
+        rows_df['run_date'] = pd.to_datetime(rows_df['run_date'])
+        rows_df['is_passed'] = rows_df['status'] == 'passed'
+        rows_df['is_failed'] = rows_df['status'].isin(['failed', 'error', 'fail'])
 
-        if cumulative_df.empty:
-            return None
+        group_keys = ['test_id', 'platform_type', 'mode']
+        # First date each aggregated-mode group appeared, and first date it passed.
+        first_seen = rows_df.groupby(group_keys)['run_date'].min()
+        first_passed = rows_df[rows_df['is_passed']].groupby(group_keys)['run_date'].min()
+        group_df = pd.DataFrame({'first_seen': first_seen})
+        group_df['first_passed'] = first_passed  # NaT where the group never passed
+
+        # Raw daily throughput (informational columns) on a per-execution basis.
+        daily_throughput = (
+            rows_df.groupby(rows_df['run_date'].dt.date)
+            .agg(day_passed=('is_passed', 'sum'), day_failed=('is_failed', 'sum'))
+        )
+
+        distinct_dates = sorted(rows_df['run_date'].dt.normalize().unique())
 
         days = []
         prev_cum = 0
-        cumulative_passed = 0
-        cumulative_failed = 0
-        for i, row in cumulative_df.iterrows():
-            cum = int(row['cumulative_pt_tests'])
+        for d in distinct_dates:
+            present_mask = group_df['first_seen'] <= d
+            passed_mask = group_df['first_passed'] <= d  # NaT comparisons resolve to False
+            cum = int(present_mask.sum())
+            cum_passed = int(passed_mask.sum())
             delta = cum - prev_cum
             coverage_pct = cum / baseline_total * 100
             daily_add_pct = delta / baseline_total * 100
+            cum_pass_ratio = (cum_passed / cum * 100) if cum > 0 else 0
 
-            date_str = str(row['run_date'])
-            day_row = daily_df[daily_df['run_date'].astype(str) == date_str]
-            if not day_row.empty:
-                day_passed = int(day_row['passed'].iloc[0] or 0)
-                day_failed = int(day_row['failed'].iloc[0] or 0)
+            date_key = pd.Timestamp(d).date()
+            date_str = str(date_key)
+            if date_key in daily_throughput.index:
+                day_passed = int(daily_throughput.loc[date_key, 'day_passed'])
+                day_failed = int(daily_throughput.loc[date_key, 'day_failed'])
             else:
                 day_passed = 0
                 day_failed = 0
-
-            cumulative_passed += day_passed
-            cumulative_failed += day_failed
-            cumulative_total = cumulative_passed + cumulative_failed
-            cum_pass_ratio = (cumulative_passed / cumulative_total * 100) if cumulative_total > 0 else 0
 
             days.append({
                 'date': date_str,
