@@ -385,11 +385,17 @@ def get_version_info(jira, version_name):
                 is_released = getattr(v, 'released', False)
                 is_archived = getattr(v, 'archived', False)
                 release_date = getattr(v, 'releaseDate', None)
+                # Jira version start date is used as release start for trend charts.
+                start_date = getattr(v, 'startDate', None)
+                if not start_date and hasattr(v, 'raw') and isinstance(v.raw, dict):
+                    start_date = v.raw.get('startDate')
                 
                 print(f"Version Info:")
                 print(f"  Name: {v.name}")
                 print(f"  Released: {is_released}")
                 print(f"  Archived: {is_archived}")
+                if start_date:
+                    print(f"  Start Date: {start_date}")
                 if release_date:
                     print(f"  Release Date: {release_date}")
                 print()
@@ -398,15 +404,30 @@ def get_version_info(jira, version_name):
                     'name': v.name,
                     'released': is_released,
                     'archived': is_archived,
+                    'start_date': start_date,
                     'release_date': release_date,
                     'is_active': not is_released and not is_archived
                 }
         
         print(f"⚠️  Version {version_name} not found in Jira, assuming active\n")
-        return {'name': version_name, 'released': False, 'archived': False, 'is_active': True}
+        return {
+            'name': version_name,
+            'released': False,
+            'archived': False,
+            'start_date': None,
+            'release_date': None,
+            'is_active': True
+        }
     except Exception as e:
         print(f"⚠️  Could not fetch version info: {e}\n")
-        return {'name': version_name, 'released': False, 'archived': False, 'is_active': True}
+        return {
+            'name': version_name,
+            'released': False,
+            'archived': False,
+            'start_date': None,
+            'release_date': None,
+            'is_active': True
+        }
 
 def connect_to_jira():
     """Connect to Jira using credentials from .env file"""
@@ -1727,7 +1748,7 @@ def get_cross_release_distribution(jira):
         return {}
 
 
-def calculate_historical_trends(bugs, weeks=8):
+def calculate_historical_trends(bugs, weeks=8, release_start=None):
     """Calculate historical bug trends over the specified number of weeks"""
     from datetime import datetime, timedelta
     from collections import Counter
@@ -1746,9 +1767,26 @@ def calculate_historical_trends(bugs, weeks=8):
             'release_distribution': {}
         }
     
-    # Find earliest bug creation date
+    # Find earliest bug creation date in the dataset, then optionally override
+    # trend start to a known release start date.
     earliest_date = min([datetime.strptime(bug.fields.created[:10], '%Y-%m-%d').date() for bug in bugs])
     end_date = datetime.now().date()
+    trend_start_date = earliest_date
+
+    if release_start:
+        try:
+            if isinstance(release_start, str):
+                trend_start_date = datetime.strptime(release_start[:10], '%Y-%m-%d').date()
+            elif isinstance(release_start, datetime):
+                trend_start_date = release_start.date()
+            else:
+                trend_start_date = release_start
+        except Exception:
+            print(f"  ⚠️  Invalid RELEASE_START '{release_start}'. Falling back to earliest bug date {earliest_date}.")
+            trend_start_date = earliest_date
+
+    if trend_start_date > end_date:
+        trend_start_date = end_date
     
     # Generate weekly data points
     dates = []
@@ -1756,7 +1794,7 @@ def calculate_historical_trends(bugs, weeks=8):
     dev_counts = []
     qa_counts = []
     
-    current_date = earliest_date
+    current_date = trend_start_date
     while current_date <= end_date:
         dates.append(current_date.strftime('%Y-%m-%d'))
         
@@ -1789,7 +1827,7 @@ def calculate_historical_trends(bugs, weeks=8):
     high_sev_dev = []
     high_sev_qa = []
     
-    current_date = earliest_date
+    current_date = trend_start_date
     while current_date <= end_date:
         high_sev_dates.append(current_date.strftime('%Y-%m-%d'))
         
@@ -2320,6 +2358,7 @@ def main():
     sprint_start_override = os.getenv('SPRINT_START', '').strip()
     sprint_end_override = os.getenv('SPRINT_END', '').strip()
     ci_run_start = os.getenv('CI_RUN_START', '').strip()
+    release_start_override = os.getenv('RELEASE_START', '').strip()
     skip_ai_insights = os.getenv('SKIP_AI_INSIGHTS', '').strip().lower() in ('1', 'true', 'yes')
 
     if not version:
@@ -2348,6 +2387,8 @@ def main():
     ci_start = ci_run_start if ci_run_start else sprint_start
     if ci_run_start:
         print(f"CI_RUN_START override: using {ci_run_start} as CI metrics start date")
+    if release_start_override:
+        print(f"RELEASE_START override: using {release_start_override[:10]} for historical trend charts")
 
     # Auto-detect builds from database unless overridden
     if builds_override:
@@ -2375,6 +2416,11 @@ def main():
     if version_info['archived']:
         print(f"⚠️  WARNING: Version {version} is ARCHIVED in Jira")
         print(f"   This is a historical version with no active work.\n")
+
+    jira_release_start = version_info.get('start_date')
+    effective_release_start = release_start_override if release_start_override else jira_release_start
+    if jira_release_start and not release_start_override:
+        print(f"Using Jira version start date for historical trend charts: {jira_release_start[:10]}")
     
     # Get bug data - all active bugs across unreleased DP releases
     print("Fetching bug data (all active releases)...")
@@ -2483,9 +2529,30 @@ def main():
         bugs_closed_candidates = []
         bugs_closed_this_week = []
     
+    # Historical trend should be based on full bug history (including currently
+    # closed bugs) so older weeks are represented correctly.
+    print("Fetching bug history for release-start trend charts...")
+    historical_bugs_jql = (
+        'project = DP AND type = Bug '
+        'AND fixVersion in unreleasedVersions() '
+        'AND fixVersion != "10.100.0.0" '
+        'AND cf[10129] != "DP Runners" '
+        'AND status != Trash'
+    )
+    try:
+        historical_bugs = jira.search_issues(historical_bugs_jql, maxResults=False, expand='changelog')
+        print(f"✓ Found {len(historical_bugs)} bugs for historical trend calculation")
+    except Exception as e:
+        print(f"  ⚠️  Could not fetch historical bug dataset: {e}")
+        print("  ⚠️  Falling back to active bug dataset for historical trends")
+        historical_bugs = bugs
+
     # Calculate historical trends
     print("Calculating historical bug trends...")
-    historical_trends = calculate_historical_trends(bugs)
+    historical_trends = calculate_historical_trends(
+        historical_bugs,
+        release_start=effective_release_start if effective_release_start else None
+    )
 
     # Override release distribution with cross-release data (all active versions)
     cross_release_dist = get_cross_release_distribution(jira)
