@@ -1670,13 +1670,14 @@ def get_bug_status_at_date(issue, target_date):
                 if item.field == 'status':
                     status_at_date = item.toString
     
-    # Categorize
+    # Categorize according to DP workflow semantics:
+    # closed = accepted/closed/done, qa = completed/resolved/fixed, dev = everything else open.
     status_lower = status_at_date.lower()
-    if 'accepted' in status_lower:
+    if any(s in status_lower for s in ['accepted', 'closed', 'done']):
         return 'closed'
-    elif 'completed' in status_lower:
+    elif any(s in status_lower for s in ['completed', 'resolved', 'fixed']):
         return 'qa'
-    elif any(s in status_lower for s in ['in progress', 'to do', 'to-do', 'none', 'open']):
+    elif any(s in status_lower for s in ['in progress', 'to do', 'to-do', 'none', 'open', 'new']):
         return 'dev'
     else:
         return 'dev'
@@ -2299,11 +2300,11 @@ def get_bug_status_at_date(issue, target_date):
                     status_at_date = item.toString
     
     status_lower = status_at_date.lower()
-    if 'accepted' in status_lower:
+    if any(s in status_lower for s in ['accepted', 'closed', 'done']):
         return 'closed'
-    elif 'completed' in status_lower:
+    elif any(s in status_lower for s in ['completed', 'resolved', 'fixed']):
         return 'qa'
-    elif any(s in status_lower for s in ['in progress', 'to do', 'to-do', 'none', 'open']):
+    elif any(s in status_lower for s in ['in progress', 'to do', 'to-do', 'none', 'open', 'new']):
         return 'dev'
     else:
         return 'dev'
@@ -2533,11 +2534,10 @@ def main():
     # closed bugs) so older weeks are represented correctly.
     print("Fetching bug history for release-start trend charts...")
     historical_bugs_jql = (
-        'project = DP AND type = Bug '
-        'AND fixVersion in unreleasedVersions() '
-        'AND fixVersion != "10.100.0.0" '
-        'AND cf[10129] != "DP Runners" '
-        'AND status != Trash'
+        f'project = DP AND type = Bug '
+        f'AND fixVersion = "{version}" '
+        f'AND cf[10129] != "DP Runners" '
+        f'AND status != Trash'
     )
     try:
         historical_bugs = jira.search_issues(historical_bugs_jql, maxResults=False, expand='changelog')
